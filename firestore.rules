@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isRole(role) {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return isRole('Admin') || isRole('Super Admin') || isRole('admin');
+    }
+
+    function isPhotographer() {
+      return isRole('Photographer');
+    }
+
+    function isStaff() {
+      return isRole('Designer') || isRole('Printing Staff');
+    }
+
+    // users
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // services
+    match /services/{id} {
+      allow read, write: if true;
+    }
+
+    // products
+    match /products/{id} {
+      allow read, write: if true;
+    }
+
+    // gallery
+    match /gallery/{id} {
+      allow read, write: if true;
+    }
+
+    // offers
+    match /offers/{id} {
+      allow read, write: if true;
+    }
+
+    // blogs
+    match /blogs/{id} {
+      allow read, write: if true;
+    }
+
+    // reviews
+    match /reviews/{id} {
+      allow read, write: if true;
+    }
+
+    // settings
+    match /settings/{id} {
+      allow read, write: if true;
+    }
+
+    // website_settings
+    match /website_settings/{id} {
+      allow read, write: if true;
+    }
+
+    // inquiries
+    match /inquiries/{id} {
+      allow read, write: if true;
+    }
+
+    // bookings
+    match /bookings/{id} {
+      allow read, write: if true;
+    }
+
+    // orders
+    match /orders/{id} {
+      allow read, write: if true;
+    }
+
+    // expenses
+    match /expenses/{id} {
+      allow read, write: if true;
+    }
+
+    // uploaded_images
+    match /uploaded_images/{id} {
+      allow read, write: if true;
+    }
+
+    // coupons
+    match /coupons/{id} {
+      allow read, write: if true;
+    }
+
+    // coupon_usages
+    match /coupon_usages/{id} {
+      allow read, write: if true;
+    }
+
+    // wedding_cards
+    match /wedding_cards/{id} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Shiv Studio & Printers",
+  "description": "Comprehensive management dashboard and landing page for a Photography Studio and Printing Press, including customer bookings, online print orders, file upload, shopping cart, staff workflow management, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

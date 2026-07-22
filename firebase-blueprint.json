@@ -1,0 +1,314 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing identity and role details",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique Firebase Auth identifier" },
+        "email": { "type": "string", "description": "User email address" },
+        "fullName": { "type": "string", "description": "User's full name" },
+        "phone": { "type": "string", "description": "User's contact phone number" },
+        "role": { "type": "string", "enum": ["Super Admin", "Admin", "Photographer", "Designer", "Printing Staff", "Customer"], "description": "User's system role for authorization checks" },
+        "address": { "type": "string", "description": "Optional physical shipping address" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of profile creation" }
+      },
+      "required": ["uid", "email", "fullName", "phone", "role", "createdAt"]
+    },
+    "ServiceItem": {
+      "title": "ServiceItem",
+      "description": "A studio or industrial printing service package",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["Photography", "Printing"] },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "image": { "type": "string" },
+        "gallery": { "type": "array" }
+      },
+      "required": ["id", "title", "category", "description", "price", "image", "gallery"]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "A featured portfolio image highlighting past projects",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["Wedding", "Pre Wedding", "Baby", "Events", "Birthday", "Drone", "Albums", "Videos"] },
+        "imageUrl": { "type": "string" },
+        "isFeatured": { "type": "boolean" }
+      },
+      "required": ["id", "title", "category", "imageUrl"]
+    },
+    "ProductItem": {
+      "title": "ProductItem",
+      "description": "An e-store product item like customized frames, albums, and magic mugs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "discountPrice": { "type": "number" },
+        "image": { "type": "string" },
+        "images": { "type": "array" },
+        "stock": { "type": "number" },
+        "description": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "number" }
+      },
+      "required": ["id", "title", "category", "price", "image", "images", "stock", "description", "rating", "reviewsCount"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "An appointment booking for a photography shoot session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "address": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "serviceTitle": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "location": { "type": "string" },
+        "notes": { "type": "string" },
+        "advancePaid": { "type": "number" },
+        "totalPrice": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Completed", "Cancelled"] },
+        "photographerId": { "type": "string" },
+        "photographerName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "customerPhone", "customerEmail", "address", "serviceId", "serviceTitle", "date", "time", "location", "advancePaid", "totalPrice", "status", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A print order placed by a customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "items": { "type": "array" },
+        "uploadedFileUrl": { "type": "string" },
+        "uploadedFileName": { "type": "string" },
+        "address": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "gst": { "type": "number" },
+        "shipping": { "type": "number" },
+        "total": { "type": "number" },
+        "discount": { "type": "number" },
+        "couponCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Accepted", "Designing", "Printing", "Ready", "Shipped", "Delivered", "Cancelled"] },
+        "paymentId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "customerPhone", "customerEmail", "items", "address", "subtotal", "gst", "shipping", "total", "discount", "status", "createdAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Studio operational expenses recorded by admins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string", "enum": ["Rent", "Salary", "Electricity", "Equipment", "Printing Material", "Travel", "Maintenance", "Other"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "category", "amount", "description", "date", "createdAt"]
+    },
+    "OfferItem": {
+      "title": "OfferItem",
+      "description": "A promotional coupon/discount deal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "code": { "type": "string" },
+        "discountPercent": { "type": "number" },
+        "image": { "type": "string" }
+      },
+      "required": ["id", "title", "description", "code", "discountPercent", "image"]
+    },
+    "BlogItem": {
+      "title": "BlogItem",
+      "description": "An informational studio blog article",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "excerpt": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string", "enum": ["Photography", "Printing", "News"] },
+        "image": { "type": "string" },
+        "author": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "excerpt", "content", "category", "image", "author", "date"]
+    },
+    "ReviewItem": {
+      "title": "ReviewItem",
+      "description": "Customer feedback review and rating",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "reply": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "rating", "comment", "date"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "A general inquiry from the contact form",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "email", "phone", "subject", "message", "createdAt"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Dynamic coupon engine item with usage rules, limits, validity and target applicability",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "description": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["PERCENTAGE", "FIXED"] },
+        "discountValue": { "type": "number" },
+        "minOrderAmount": { "type": "number" },
+        "maxDiscountAmount": { "type": "number" },
+        "applicableOn": { "type": "string", "enum": ["ALL", "CATEGORIES", "PRODUCTS", "PRINTING", "PHOTOGRAPHY"] },
+        "applicableCategoryIds": { "type": "array" },
+        "applicableProductIds": { "type": "array" },
+        "validFrom": { "type": "string" },
+        "validUntil": { "type": "string" },
+        "usageLimit": { "type": "number" },
+        "usageLimitPerCustomer": { "type": "number" },
+        "timesUsed": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "firstOrderOnly": { "type": "boolean" },
+        "customerSpecificEmail": { "type": "string" },
+        "autoApply": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "code", "discountType", "discountValue", "minOrderAmount", "maxDiscountAmount", "applicableOn", "validFrom", "validUntil", "usageLimit", "usageLimitPerCustomer", "timesUsed", "isActive", "firstOrderOnly", "createdAt"]
+    },
+    "CouponUsage": {
+      "title": "CouponUsage",
+      "description": "Record of a coupon redemption by a customer on a specific order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "couponId": { "type": "string" },
+        "couponCode": { "type": "string" },
+        "couponName": { "type": "string" },
+        "orderId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "discountAmount": { "type": "number" },
+        "usedAt": { "type": "string" }
+      },
+      "required": ["id", "couponId", "couponCode", "orderId", "customerEmail", "discountAmount", "usedAt"]
+    },
+    "StudioSettings": {
+      "title": "StudioSettings",
+      "description": "General settings of the studio shown in invoices and contacts",
+      "type": "object",
+      "properties": {
+        "studioName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "gstNumber": { "type": "string" },
+        "bankName": { "type": "string" },
+        "bankAccount": { "type": "string" },
+        "bankIfsc": { "type": "string" },
+        "logoUrl": { "type": "string" }
+      },
+      "required": ["studioName", "phone", "email", "address", "gstNumber", "bankName", "bankAccount", "bankIfsc"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles collection"
+    },
+    "services/{serviceId}": {
+      "schema": "ServiceItem",
+      "description": "Studio and printing services collection"
+    },
+    "gallery/{galleryId}": {
+      "schema": "GalleryItem",
+      "description": "Portfolio gallery collection"
+    },
+    "products/{productId}": {
+      "schema": "ProductItem",
+      "description": "Product collection"
+    },
+    "bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Bookings collection"
+    },
+    "orders/{orderId}": {
+      "schema": "Order",
+      "description": "Orders collection"
+    },
+    "expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Expenses collection"
+    },
+    "offers/{offerId}": {
+      "schema": "OfferItem",
+      "description": "Promotional offers collection"
+    },
+    "blogs/{blogId}": {
+      "schema": "BlogItem",
+      "description": "Studio blogs collection"
+    },
+    "reviews/{reviewId}": {
+      "schema": "ReviewItem",
+      "description": "Reviews collection"
+    },
+    "inquiries/{inquiryId}": {
+      "schema": "Inquiry",
+      "description": "Customer contact form inquiries"
+    },
+    "settings/{settingId}": {
+      "schema": "StudioSettings",
+      "description": "Studio global configurations"
+    },
+    "coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Dynamic coupon rules collection"
+    },
+    "coupon_usages/{usageId}": {
+      "schema": "CouponUsage",
+      "description": "Coupon usage log history"
+    }
+  }
+}
