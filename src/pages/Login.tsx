@@ -63,12 +63,6 @@ export const Login: React.FC = () => {
     }
   };
 
-  const handleFillDemo = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError('');
-  };
-
   return (
     <div className="bg-slate-950 min-h-[85vh] flex items-center justify-center p-4">
       <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl overflow-hidden">
@@ -134,27 +128,6 @@ export const Login: React.FC = () => {
             {loading ? 'Authenticating Profile...' : 'Sign In to Portal'}
           </button>
         </form>
-
-        {/* Quick Demo Access */}
-        <div className="pt-2 text-center space-y-2">
-          <p className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Quick Demo Sign In</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => handleFillDemo('admin@shivstudio.com', 'Shiv@123')}
-              className="flex-1 py-1.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 font-mono text-xxs transition-colors"
-            >
-              Demo Admin
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFillDemo('customer@shivstudio.com', 'Customer@123')}
-              className="flex-1 py-1.5 px-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 font-mono text-xxs transition-colors"
-            >
-              Demo Customer
-            </button>
-          </div>
-        </div>
 
         <div className="pt-4 border-t border-slate-800/60 text-center text-xs text-slate-400 font-sans">
           <p>Don't have an account? <Link to="/register" className="text-amber-400 font-bold hover:underline">Sign Up</Link></p>
