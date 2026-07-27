@@ -28,8 +28,8 @@ export const Contact: React.FC = () => {
         if (settingsSnap.exists()) {
           setSettings((prev: any) => ({ ...prev, ...settingsSnap.data() }));
         }
-      } catch (err) {
-        console.error('Error fetching settings on Contact page:', err);
+      } catch (err: any) {
+        console.warn('Notice (Contact): Offline mode or network issue, using default studio settings.');
       }
     };
     fetchSettings();

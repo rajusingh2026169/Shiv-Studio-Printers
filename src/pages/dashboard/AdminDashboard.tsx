@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Order, Booking, ProductItem, Expense, ServiceItem, GalleryItem, OfferItem, ReviewItem, UserProfile, BlogItem } from '../../types';
 import { 
@@ -33,14 +33,27 @@ import {
   Sliders,
   DollarSign,
   Download,
-  FolderArchive
+  FolderArchive,
+  Film,
+  Gift
 } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
 import { ImageField } from '../../components/ImageField';
 import { MultiImageField } from '../../components/MultiImageField';
 import { AdminCouponManager } from '../../components/AdminCouponManager';
 import { AdminWeddingCardManager } from '../../components/AdminWeddingCardManager';
+import { AdminVideoManager } from '../../components/AdminVideoManager';
+import { AdminOfferBannerManager } from '../../components/AdminOfferBannerManager';
 import { useAuth } from '../../context/AuthContext';
+import { 
+  saveProductImages, 
+  getProductImages, 
+  prepareCleanProductDoc, 
+  autoMigrateExistingProducts 
+} from '../../utils/productService';
+
+// Modular Feature Flag: Set to true to re-enable Video Upload & Management in Admin Panel
+const ENABLE_VIDEO_MANAGEMENT = false;
 
 export const AdminDashboard: React.FC = () => {
   const { currentUser } = useAuth();
@@ -116,7 +129,7 @@ export const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   
   const [activeTab, setActiveTab] = useState<
-    'analytics' | 'website' | 'services' | 'products' | 'wedding-cards' | 'bookings' | 'orders' | 'expenses' | 'gallery' | 'offers' | 'reviews' | 'customers' | 'inquiries' | 'blogs'
+    'analytics' | 'website' | 'services' | 'products' | 'wedding-cards' | 'bookings' | 'orders' | 'expenses' | 'gallery' | 'videos' | 'offers' | 'offer-banners' | 'reviews' | 'customers' | 'inquiries' | 'blogs'
   >('analytics');
 
   // Website Settings State
@@ -250,7 +263,23 @@ export const AdminDashboard: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
+    autoMigrateExistingProducts().catch(err => console.error(err));
     fetchDashboardData();
+
+    // Subscribe to Firestore 'products' collection in real-time
+    const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snap) => {
+      if (snap.metadata.fromCache) {
+        console.log('[Data Source: Local Cache] Loaded products in AdminDashboard:', snap.docs.length);
+      } else {
+        console.log('[Data Source: Firestore] Loaded products in AdminDashboard:', snap.docs.length);
+      }
+      const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() } as ProductItem));
+      setProducts(loaded);
+    }, (err) => {
+      console.error('[Data Source Error] Admin products listener error:', err);
+    });
+
+    return () => unsubscribeProducts();
   }, [currentUser]);
 
   const fetchDashboardData = async () => {
@@ -486,11 +515,8 @@ export const AdminDashboard: React.FC = () => {
       setPDrawerTab('pricing');
       return false;
     }
-    // Automatically fallback to a professional cover image if left empty instead of blocking the user
     if (!pImage) {
-      const fallbackUrl = pImages && pImages.length > 0 
-        ? pImages[0] 
-        : 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&q=80&w=400';
+      const fallbackUrl = pImages && pImages.length > 0 ? pImages[0] : '';
       setPImage(fallbackUrl);
     }
     return true;
@@ -502,7 +528,7 @@ export const AdminDashboard: React.FC = () => {
 
     try {
       const prodId = editingProduct ? editingProduct.id : `prod_${Math.floor(Math.random() * 100000)}`;
-      const defaultImg = 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&q=80&w=400';
+      const defaultImg = pImages && pImages.length > 0 ? pImages[0] : '';
       
       const calcDiscountPercent = Number(pPrice) > 0 ? Math.round((Number(pDiscountPrice) / Number(pPrice)) * 100) : 0;
       const calcFinalPrice = Number(pPrice) - Number(pDiscountPrice);
@@ -578,7 +604,15 @@ export const AdminDashboard: React.FC = () => {
         }
       };
 
-      await setDoc(doc(db, 'products', prodId), prodData);
+      // 1. Save gallery images as separate documents in product_images collection
+      const galleryList = pImages.length > 0 ? pImages : (pImage ? [pImage] : []);
+      await saveProductImages(prodId, galleryList, pTitle);
+
+      // 2. Prepare clean product document without embedded images array and without base64 strings
+      const cleanDoc = await prepareCleanProductDoc(prodData, prodId);
+
+      // 3. Save clean document to Firestore
+      await setDoc(doc(db, 'products', prodId), cleanDoc);
       
       if (andAddAnother) {
         alert(`Product "${pTitle}" saved successfully!`);
@@ -1044,14 +1078,25 @@ export const AdminDashboard: React.FC = () => {
   // Quick actions to fill form variables for edit
   const startEditProduct = (p: ProductItem) => {
     setEditingProduct(p);
-    setPTitle(p.title);
+    setPTitle(p.title || p.name || '');
     setPCategory(p.category);
     setPPrice(p.price);
-    setPDiscountPrice(p.discountPrice || 0);
+    setPDiscountPrice(p.discountPrice || p.discount || 0);
     setPStock(p.stock);
     setPDescription(p.description);
-    setPImage(p.image);
-    setPImages(p.images || (p.image ? [p.image] : []));
+    const mainImg = p.image || p.thumbnailUrl || p.coverImageUrl || '';
+    setPImage(mainImg);
+
+    // Initial gallery state
+    const initialImgs = p.images && p.images.length > 0 ? p.images : (mainImg ? [mainImg] : []);
+    setPImages(initialImgs);
+
+    // Fetch images from product_images collection
+    getProductImages(p.id).then(galleryImgs => {
+      if (galleryImgs && galleryImgs.length > 0) {
+        setPImages(galleryImgs);
+      }
+    }).catch(err => console.error('Error fetching product_images on edit:', err));
 
     // Populate extended fields
     setPSku(p.sku || '');
@@ -1165,8 +1210,10 @@ export const AdminDashboard: React.FC = () => {
     { key: 'orders', label: 'Print Job Pipeline', icon: Sliders },
     { key: 'expenses', label: 'Expense Ledger', icon: DollarSign },
     { key: 'gallery', label: 'Gallery Showcase', icon: ImageIcon },
+    ...(ENABLE_VIDEO_MANAGEMENT ? [{ key: 'videos', label: 'Video Studio Vault', icon: Film }] : []),
     { key: 'blogs', label: 'Blog Articles', icon: FileText },
     { key: 'offers', label: 'Coupons & Deals', icon: Tag },
+    { key: 'offer-banners', label: 'Offer Banners', icon: Gift },
     { key: 'reviews', label: 'Reviews Reply', icon: MessageSquare },
     { key: 'customers', label: 'Customer Database', icon: Users },
     { key: 'inquiries', label: 'Client Inboxes', icon: Inbox }
@@ -2322,6 +2369,13 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
 
+            {/* 8.5. VIDEO STUDIO VAULT */}
+            {activeTab === 'videos' && ENABLE_VIDEO_MANAGEMENT && (
+              <div className="animate-fade-in">
+                <AdminVideoManager />
+              </div>
+            )}
+
             {/* WEDDING CARDS TAB */}
             {activeTab === 'wedding-cards' && (
               <AdminWeddingCardManager />
@@ -2381,6 +2435,13 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* OFFER BANNERS PROMOTIONS */}
+            {activeTab === 'offer-banners' && (
+              <div className="animate-fade-in">
+                <AdminOfferBannerManager />
               </div>
             )}
 
@@ -3377,7 +3438,7 @@ export const AdminDashboard: React.FC = () => {
                         <div>
                           <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-950">
                             <img 
-                              src={pImage || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&q=80&w=400'} 
+                              src={pImage || (pImages && pImages[0]) || ''} 
                               alt="Cover Preview" 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer"

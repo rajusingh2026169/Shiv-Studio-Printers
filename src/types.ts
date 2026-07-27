@@ -12,6 +12,24 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface VideoItem {
+  id: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  title: string;
+  description?: string;
+  duration?: number | string;
+  fileSize?: number | string;
+  category: 'products' | 'services' | 'gallery' | 'portfolio' | string;
+  entityId?: string; // productId, serviceId, galleryId
+  order?: number;
+  uploadedBy?: string;
+  status?: string;
+  views?: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface ServiceItem {
   id: string;
   title: string;
@@ -20,6 +38,7 @@ export interface ServiceItem {
   price: number;
   image: string;
   gallery: string[];
+  videos?: VideoItem[];
   enableGst?: boolean;
   gstPercent?: number;
   gstIncludedInPrice?: boolean;
@@ -30,21 +49,41 @@ export interface GalleryItem {
   title: string;
   category: 'Wedding' | 'Pre Wedding' | 'Baby' | 'Events' | 'Birthday' | 'Drone' | 'Albums' | 'Videos';
   imageUrl: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  mediaType?: 'photo' | 'video';
   isFeatured?: boolean;
+}
+
+export interface ProductImageItem {
+  id?: string;
+  productId: string;
+  imageUrl: string;
+  order: number;
+  alt: string;
+  createdAt: string;
 }
 
 export interface ProductItem {
   id: string;
   title: string;
+  name?: string;
+  slug?: string;
   category: string;
   price: number;
   discountPrice?: number;
+  discount?: number;
   image: string;
-  images: string[];
+  thumbnailUrl?: string;
+  coverImageUrl?: string;
+  images?: string[];
+  videos?: VideoItem[];
   stock: number;
   description: string;
   rating: number;
   reviewsCount: number;
+  GST?: number;
+  tags?: string[];
 
   // Professional E-commerce Fields
   userId?: string;
@@ -111,6 +150,32 @@ export interface ProductItem {
     limitedStock?: boolean;
   };
 }
+
+export interface WeddingCardItem {
+  id: string;
+  title?: string;
+  name?: string;
+  category: string;
+  price: number;
+  discountPrice?: number;
+  image?: string;
+  mainImage?: string;
+  images?: any;
+  cardImages?: any;
+  description: string;
+  designCode?: string;
+  minOrderQuantity?: number;
+  paperType?: string;
+  printingType?: string;
+  size?: string;
+  color?: string;
+  isAvailable?: boolean;
+  isFeatured?: boolean;
+  whatsappNumber?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 
 export interface CartItem {
   id: string;
@@ -299,29 +364,34 @@ export interface StudioSettings {
   logoUrl?: string;
 }
 
-export interface WeddingCardItem {
+export type BannerDisplayPosition = 
+  | 'homepage_top'
+  | 'hero'
+  | 'sticky_announcement'
+  | 'product_store'
+  | 'photography_services'
+  | 'printing_services';
+
+export interface OfferBanner {
   id: string;
-  designCode: string; // Unique design code e.g. 15602, 115002
-  name: string;
-  category: string; // e.g. Royal Laser Cut, Box Invitation, Single Sheet, Acrylic, Floral, Traditional
-  price: number;
-  minOrderQuantity: number; // e.g. 100
-  paperType: string; // e.g. Metallic Board, Velvet Board, Handmade Paper, Acrylic, Glossy, Matt
-  printingType: string; // e.g. Foil Printing, Screen Printing, UV Emboss, Digital
-  size: string; // e.g. 7x10 inch
-  description: string;
-  isAvailable: boolean; // Available / Out of Stock
-  isFeatured?: boolean;
-  color?: string; // e.g. Red, Gold, Cream, Blue, Pink, Maroon, Green
-  images: {
-    front?: string;
-    inside?: string;
-    back?: string;
-    additional?: string[];
-  };
-  mainImage: string; // Quick cover image URL
-  whatsappNumber?: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  desktopImageUrl: string;
+  mobileImageUrl?: string;
+  backgroundVideoUrl?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  couponCode?: string;
+  validFrom: string;
+  validUntil: string;
+  active: boolean;
+  priority: number;
+  autoHideAfterExpiry: boolean;
+  showCountdown: boolean;
+  displayPosition: BannerDisplayPosition;
   createdAt: string;
   updatedAt?: string;
 }
+
 

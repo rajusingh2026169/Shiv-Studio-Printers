@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ServiceItem } from '../types';
-import { Camera, Printer, Layers, Film, HeartHandshake, Eye, Sparkles } from 'lucide-react';
+import { ServiceItem, VideoItem } from '../types';
+import { getVideosForCategory } from '../utils/videoService';
+import { VideoPlayer } from '../components/VideoPlayer';
+import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
+import { Camera, Printer, Layers, Film, HeartHandshake, Eye, Sparkles, Image as ImageIcon } from 'lucide-react';
 
 export const Services: React.FC = () => {
   const [services, setServices] = useState<ServiceItem[]>([]);
-  const [filter, setFilter] = useState<'All' | 'Photography' | 'Printing'>('All');
+  const [filter, setFilter] = useState<string>('All');
   const [loading, setLoading] = useState(true);
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
 
@@ -30,10 +33,26 @@ export const Services: React.FC = () => {
     ? services 
     : services.filter(s => s.category === filter);
 
+  const handleSelectService = async (service: ServiceItem) => {
+    setSelectedService(service);
+    const serviceVideos = await getVideosForCategory('services', service.id);
+    setSelectedService(prev => prev && prev.id === service.id ? { ...prev, videos: serviceVideos } : prev);
+  };
+
   return (
     <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-12">
         
+        {/* Banner Displays */}
+        {filter === 'All' && (
+          <div className="space-y-4">
+            <OfferBannerDisplay position="photography_services" />
+            <OfferBannerDisplay position="printing_services" />
+          </div>
+        )}
+        {filter === 'Photography' && <OfferBannerDisplay position="photography_services" />}
+        {filter === 'Printing' && <OfferBannerDisplay position="printing_services" />}
+
         {/* Page Header */}
         <div className="text-center space-y-4">
           <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider">
@@ -144,7 +163,7 @@ export const Services: React.FC = () => {
                       <p className="text-xl font-extrabold text-amber-400">₹{service.price.toLocaleString('en-IN')}</p>
                     </div>
                     <button 
-                      onClick={() => setSelectedService(service)}
+                      onClick={() => handleSelectService(service)}
                       className="px-3.5 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center space-x-1"
                     >
                       <Eye className="h-3.5 w-3.5" />
@@ -204,16 +223,41 @@ export const Services: React.FC = () => {
               {/* Service Inner Gallery */}
               {selectedService.gallery && selectedService.gallery.length > 0 && (
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono">Shoot Work Gallery</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono flex items-center space-x-1">
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    <span>Shoot Work Gallery ({selectedService.gallery.length})</span>
+                  </h4>
                   <div className="grid grid-cols-3 gap-2">
                     {selectedService.gallery.map((imgUrl, i) => (
-                      <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800">
+                      <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
                         <img 
                           src={imgUrl} 
                           alt="Deliverable gallery sample" 
                           className="w-full h-full object-cover" 
                           referrerPolicy="no-referrer"
                           loading="lazy"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Service Inner Videos */}
+              {selectedService.videos && selectedService.videos.length > 0 && (
+                <div className="space-y-3 pt-2 border-t border-slate-800">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono flex items-center space-x-1">
+                    <Film className="h-3.5 w-3.5" />
+                    <span>Service Video Teasers ({selectedService.videos.length})</span>
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedService.videos.map((vid) => (
+                      <div key={vid.id} className="space-y-1">
+                        <VideoPlayer
+                          src={vid.videoUrl}
+                          poster={vid.thumbnailUrl}
+                          title={vid.title}
+                          description={vid.description}
                         />
                       </div>
                     ))}

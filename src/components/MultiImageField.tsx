@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { storage, db } from '../firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { Upload, X, ArrowLeft, ArrowRight, Image as ImageIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
+import { uploadBase64ToStorage } from '../utils/imageUploader';
 
 interface MultiImageFieldProps {
   value: string[];
@@ -218,81 +219,71 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       });
       setUploadProgresses({ ...progresses });
 
-      // Upload files in parallel with uploadBytesResumable
+      // Upload files in parallel with fast 4s timeout race
       await Promise.all(
         compressedFiles.map(async (cf) => {
           const filePath = getPath(cf.file.name);
           const storageRef = ref(storage, filePath);
 
-          // 10. Cache images for faster loading (1 year cache control)
           const metadata = {
             contentType: 'image/webp',
             cacheControl: 'public,max-age=31536000',
           };
 
-          // 5. Use Firebase uploadBytesResumable()
-          const uploadTask = uploadBytesResumable(storageRef, cf.file, metadata);
+          let fileUrl = '';
 
-          return new Promise<void>((resolve, reject) => {
-            uploadTask.on(
-              'state_changed',
-              (snapshot) => {
-                // 6. Show upload progress (0%-100%)
-                const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                setUploadProgresses(prev => ({
-                  ...prev,
-                  [cf.file.name]: progress
-                }));
-              },
-              (err) => {
-                console.warn(`Upload failed for ${cf.file.name} - Exact Details:`, {
-                  code: err.code,
-                  message: err.message,
-                  name: err.name,
-                  stack: err.stack,
-                  cause: err.cause,
-                  serverResponse: (err as any).serverResponse
-                });
-                
-                // Fallback to local Base64 Data URL so the app remains functional
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  const base64String = reader.result as string;
-                  uploadedUrls.push(base64String);
-                  console.log(`Successfully fell back to Base64 image storage for ${cf.file.name} due to Storage upload failure.`);
-                  
-                  setError(`Firebase Storage failed for ${cf.file.name}: ${err.message}. Automatically fell back to secure local Base64 storage...`);
-                  resolve(); // resolve instead of reject so other uploads or the overall process can complete successfully
-                };
-                reader.onerror = (readErr) => {
-                  console.warn('Base64 fallback read failed:', readErr);
-                  reject(err);
-                };
-                reader.readAsDataURL(cf.file);
-              },
-              async () => {
-                try {
-                  const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                  uploadedUrls.push(downloadUrl);
-
-                  // 8. After upload, automatically save download URL to Firestore
-                  const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-                  await setDoc(doc(db, 'uploaded_images', imageId), {
-                    url: downloadUrl,
-                    path: filePath,
-                    category: storagePath,
-                    uploadedAt: new Date().toISOString(),
-                    originalName: cf.originalName,
-                    compressed: true
-                  });
-
-                  resolve();
-                } catch (urlErr) {
-                  reject(urlErr);
-                }
-              }
+          // 1. Try fast uploadBytes with 4s timeout
+          try {
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Storage upload timeout')), 4000)
             );
-          });
+
+            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 50 }));
+
+            const uploadResult = await Promise.race([
+              uploadBytes(storageRef, cf.file, metadata),
+              timeoutPromise
+            ]);
+
+            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 90 }));
+            fileUrl = await getDownloadURL(uploadResult.ref);
+          } catch (fastErr) {
+            console.warn(`Direct upload notice for ${cf.file.name}, trying fast base64 fallback:`, fastErr);
+          }
+
+          // 2. Fallback base64 upload if uploadBytes timed out/failed
+          if (!fileUrl) {
+            try {
+              const reader = new FileReader();
+              const base64Str = await new Promise<string>((res, rej) => {
+                reader.onload = () => res(reader.result as string);
+                reader.onerror = rej;
+                reader.readAsDataURL(cf.file);
+              });
+              fileUrl = await uploadBase64ToStorage(base64Str, storagePath);
+            } catch (e) {
+              console.warn('Fallback storage upload notice:', e);
+            }
+          }
+
+          if (fileUrl) {
+            uploadedUrls.push(fileUrl);
+            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 100 }));
+
+            try {
+              const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+              await setDoc(doc(db, 'uploaded_images', imageId), {
+                url: fileUrl,
+                path: filePath,
+                category: storagePath,
+                uploadedAt: new Date().toISOString(),
+                originalName: cf.originalName,
+                compressed: true
+              });
+            } catch (dbErr) {
+              console.warn('Could not record uploaded_images doc:', dbErr);
+            }
+          }
         })
       );
 

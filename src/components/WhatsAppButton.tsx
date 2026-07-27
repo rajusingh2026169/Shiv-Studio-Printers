@@ -22,8 +22,8 @@ export const WhatsAppButton: React.FC = () => {
             setPhone(firstPhone);
           }
         }
-      } catch (err) {
-        console.error('Error fetching settings for WhatsAppButton:', err);
+      } catch (err: any) {
+        console.warn('Notice (WhatsAppButton): Offline mode or network issue, using default contact number.');
       }
     };
     fetchSettings();

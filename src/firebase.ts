@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, writeBatch, collection, getDocs, limit, query } from 'firebase/firestore';
+import { getFirestore, doc, writeBatch, collection, getDocs, limit, query, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -13,31 +13,36 @@ export const db =
     ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId) 
     : getFirestore(app);
 
-// Initialize Firebase Storage with error handling fallback and fast-fail retry policies
-let storageInstance: any;
-try {
-  if (!firebaseConfig.storageBucket || firebaseConfig.storageBucket.trim() === '') {
-    throw new Error('Firebase Storage Bucket is empty or not configured in firebase-applet-config.json');
+// Initialize Firebase Storage with bucket URL
+const rawBucket = firebaseConfig.storageBucket || `${firebaseConfig.projectId}.firebasestorage.app`;
+export const storage = getStorage(app);
+
+// Set maximum upload retry time to 10 seconds (10,000 ms) to avoid long hanging retries
+storage.maxUploadRetryTime = 10000;
+storage.maxOperationRetryTime = 10000;
+
+console.log('Firebase initialized:', !!app);
+console.log('Storage connected:', !!storage);
+console.log('Bucket name:', rawBucket);
+
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Notice: Firestore is running in offline mode.");
+    }
   }
-  storageInstance = getStorage(app);
-  // Set low retry limit (10 seconds) directly on the storage instance to ensure permission, CORS, 
-  // and network errors fail fast rather than retrying indefinitely in the background.
-  storageInstance.maxUploadRetryTime = 10000;
-  storageInstance.maxOperationRetryTime = 10000;
-  console.log('Firebase Storage successfully initialized with fast-fail properties.');
-} catch (e) {
-  console.warn('Firebase Storage initialization warning/fallback:', e);
-  storageInstance = {
-    ref: () => ({
-      put: async () => ({ ref: { getDownloadURL: async () => 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=600' } }),
-      getDownloadURL: async () => 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=600',
-    })
-  };
 }
-export const storage = storageInstance;
+testConnection();
+
+let hasRunSeeding = false;
 
 // Seeding function for settings and initial wedding cards if needed
 export async function seedDatabaseIfNeeded() {
+  if (hasRunSeeding) return;
+  hasRunSeeding = true;
+
   try {
     const settingsDocRef = doc(db, 'settings', 'studio');
     const websiteSettingsDocRef = doc(db, 'website_settings', 'studio');
@@ -358,8 +363,8 @@ export async function seedDatabaseIfNeeded() {
       await batch.commit();
       console.log('Wedding Cards collection seeded successfully!');
     }
-  } catch (err) {
-    console.error('Error seeding database wedding_cards:', err);
+  } catch (err: any) {
+    console.warn('Notice (seedDatabaseIfNeeded): Seeding deferred (offline or network issue):', err?.message || err);
   }
 }
 

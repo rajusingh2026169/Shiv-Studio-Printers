@@ -116,5 +116,29 @@ service cloud.firestore {
     match /wedding_cards/{id} {
       allow read, write: if true;
     }
+
+    // product_images
+    match /product_images/{id} {
+      allow read, write: if true;
+    }
+
+    // videos
+    match /videos/{id} {
+      allow read, write: if true;
+    }
+
+    // offer_banners
+    match /offer_banners/{id} {
+      allow read, write: if true;
+    }
+
+    // notifications & mail
+    match /notifications/{id} {
+      allow read, write: if true;
+    }
+
+    match /mail/{id} {
+      allow read, write: if true;
+    }
   }
 }

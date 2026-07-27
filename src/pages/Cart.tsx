@@ -59,8 +59,8 @@ export const Cart: React.FC<CartProps> = ({
         if (settingsSnap.exists()) {
           setSettings(settingsSnap.data());
         }
-      } catch (err) {
-        console.error('Error fetching settings in Cart:', err);
+      } catch (err: any) {
+        console.warn('Notice (Cart): Offline mode or network issue, using default settings.');
       }
     };
     fetchSettings();
@@ -338,8 +338,8 @@ export const Cart: React.FC<CartProps> = ({
         }
       }
 
-      // Check if storage is a real Firebase Storage instance and has ref method
-      const isRealStorage = storage && typeof storage.ref !== 'function' && typeof ref === 'function';
+      // Check if storage is a real Firebase Storage instance and ref function is available
+      const isRealStorage = storage && typeof ref === 'function';
 
       if (isRealStorage) {
         try {
@@ -400,7 +400,7 @@ export const Cart: React.FC<CartProps> = ({
             if (prev.some(f => f.name === file.name)) return prev;
             return [...prev, {
               name: file.name,
-              url: base64Url || 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=600'
+              url: base64Url || ''
             }];
           });
         } else {

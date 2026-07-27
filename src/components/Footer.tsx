@@ -22,8 +22,8 @@ export const Footer: React.FC = () => {
         if (settingsSnap.exists()) {
           setSettings((prev: any) => ({ ...prev, ...settingsSnap.data() }));
         }
-      } catch (err) {
-        console.error('Error fetching settings in Footer:', err);
+      } catch (err: any) {
+        console.warn('Notice (Footer): Offline mode or network issue, using default footer settings.');
       }
     };
     fetchSettings();

@@ -191,8 +191,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await setDoc(doc(db, 'users', user.uid), fallbackProfile);
             setUserProfile(fallbackProfile);
           }
-        } catch (err) {
-          console.error('Error loading user profile:', err);
+        } catch (err: any) {
+          console.warn('Notice (AuthContext): Offline mode or network issue, using local profile fallback:', err?.message || err);
+          let role: UserRole = 'customer';
+          if (user.email?.toLowerCase() === 'admin@shivstudio.com') {
+            role = 'admin';
+          }
+          const offlineProfile: UserProfile = {
+            uid: user.uid,
+            email: user.email || '',
+            fullName: user.displayName || user.email?.split('@')[0] || 'Studio Customer',
+            name: user.displayName || user.email?.split('@')[0] || 'Studio Customer',
+            phone: '',
+            mobile: '',
+            role,
+            createdAt: new Date().toISOString()
+          };
+          setUserProfile(offlineProfile);
         }
       } else {
         setUserProfile(null);

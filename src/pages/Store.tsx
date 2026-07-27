@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ProductItem } from '../types';
-import { Star, Search, Filter, ShoppingCart, Heart, Eye, CheckCircle, Flame } from 'lucide-react';
+import { ProductItem, VideoItem } from '../types';
+import { getProductImages } from '../utils/productService';
+import { getVideosForCategory } from '../utils/videoService';
+import { VideoPlayer } from '../components/VideoPlayer';
+import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
+import { Star, Search, Filter, ShoppingCart, Heart, Eye, CheckCircle, Flame, Film, Image as ImageIcon, AlertCircle } from 'lucide-react';
 
 interface StoreProps {
   onAddToCart: (product: ProductItem) => void;
@@ -17,31 +21,67 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
   const [settings, setSettings] = useState<any>({ studioName: 'Shiv Studio & Printers' });
 
+  const handleSelectProduct = async (product: ProductItem) => {
+    setSelectedProduct(product);
+    let galleryImgs = product.images || [];
+    if (galleryImgs.length === 0) {
+      galleryImgs = await getProductImages(product.id);
+    }
+    const productVideos = await getVideosForCategory('products', product.id);
+    setSelectedProduct(prev => prev && prev.id === product.id ? { 
+      ...prev, 
+      images: galleryImgs,
+      videos: productVideos
+    } : prev);
+  };
+
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'products'));
-        setProducts(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductItem)));
-      } catch (err) {
-        console.error('Error loading products:', err);
-      } finally {
+    setLoading(true);
+    setStoreError(null);
+
+    // 1. Subscribe to Firestore 'products' collection in real-time
+    const productsRef = collection(db, 'products');
+    const unsubscribeProducts = onSnapshot(
+      productsRef,
+      (snapshot) => {
+        if (snapshot.metadata.fromCache) {
+          console.log('[Data Source: Local Cache] Products snapshot received:', snapshot.docs.length);
+        } else {
+          console.log('[Data Source: Firestore] Products snapshot received:', snapshot.docs.length);
+        }
+
+        const loadedProducts = snapshot.docs.map(
+          doc => ({ id: doc.id, ...doc.data() } as ProductItem)
+        );
+        setProducts(loadedProducts);
+        setStoreError(null);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('[Data Source Error] Failed to fetch products from Firestore:', err);
+        setStoreError('Products are temporarily unavailable.');
+        setProducts([]);
         setLoading(false);
       }
-    };
+    );
+
+    // 2. Fetch website settings
     const fetchSettings = async () => {
       try {
         const settingsSnap = await getDoc(doc(db, 'website_settings', 'studio'));
         if (settingsSnap.exists()) {
           setSettings(settingsSnap.data());
         }
-      } catch (err) {
-        console.error('Error fetching settings in Store:', err);
+      } catch (err: any) {
+        console.warn('Notice (Store): Settings load issue:', err?.message || err);
       }
     };
-    fetchProducts();
     fetchSettings();
+
+    return () => unsubscribeProducts();
   }, []);
 
   const categories = [
@@ -68,6 +108,8 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
     <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-12">
         
+        <OfferBannerDisplay position="product_store" className="mb-6" />
+
         {/* Store Header */}
         <div className="text-center space-y-4">
           <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider">
@@ -114,7 +156,17 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
         </div>
 
         {/* E-commerce grid */}
-        {loading ? (
+        {storeError ? (
+          <div className="text-center py-20 bg-slate-900 rounded-3xl border border-slate-800 p-8 space-y-4 max-w-xl mx-auto">
+            <div className="mx-auto w-16 h-16 bg-rose-500/10 border border-rose-500/25 rounded-full flex items-center justify-center">
+              <AlertCircle className="h-8 w-8 text-rose-500" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold text-white">{storeError}</h3>
+              <p className="text-sm text-slate-400">Unable to load products from Firestore at this time. Please check your network connection or try again later.</p>
+            </div>
+          </div>
+        ) : loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {[1, 2, 3, 4].map((n) => (
               <div key={n} className="bg-slate-900 h-96 rounded-2xl animate-pulse border border-slate-800"></div>
@@ -158,9 +210,9 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                 </button>
 
                 <div>
-                  <div className="relative aspect-square rounded-xl overflow-hidden bg-slate-950 cursor-pointer" onClick={() => setSelectedProduct(product)}>
+                  <div className="relative aspect-square rounded-xl overflow-hidden bg-slate-950 cursor-pointer" onClick={() => handleSelectProduct(product)}>
                     <img 
-                      src={product.image} 
+                      src={product.image || product.thumbnailUrl} 
                       alt={product.title} 
                       className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
                       referrerPolicy="no-referrer"
@@ -176,10 +228,10 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                   <div className="mt-4 space-y-1.5">
                     <span className="text-xxs text-slate-500 font-mono uppercase tracking-wide">{product.category}</span>
                     <h3 
-                      onClick={() => setSelectedProduct(product)}
+                      onClick={() => handleSelectProduct(product)}
                       className="text-sm font-bold text-white group-hover:text-amber-400 cursor-pointer transition-colors line-clamp-1"
                     >
-                      {product.title}
+                      {product.title || product.name}
                     </h3>
                     
                     <div className="flex items-center space-x-1.5 text-xs text-amber-500 font-sans">
@@ -204,7 +256,7 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
 
                   <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => setSelectedProduct(product)}
+                      onClick={() => handleSelectProduct(product)}
                       className="py-2.5 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold text-xs rounded-xl transition-colors flex items-center justify-center space-x-1"
                     >
                       <Eye className="h-3.5 w-3.5" />
@@ -237,30 +289,63 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
             </button>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              {/* Image side */}
-              <div className="space-y-3">
+              {/* Media side (Images & Videos) */}
+              <div className="space-y-4">
+                {/* Main cover image */}
                 <div className="aspect-square rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
                   <img 
-                    src={selectedProduct.image} 
+                    src={selectedProduct.image || selectedProduct.thumbnailUrl} 
                     alt={selectedProduct.title} 
                     className="w-full h-full object-cover" 
                     referrerPolicy="no-referrer"
                     loading="lazy"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {selectedProduct.images && selectedProduct.images.map((img, i) => (
-                    <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800">
-                      <img 
-                        src={img} 
-                        alt="product alternate look" 
-                        className="w-full h-full object-cover" 
-                        referrerPolicy="no-referrer"
-                        loading="lazy"
-                      />
+
+                {/* Multiple Images Gallery */}
+                {selectedProduct.images && selectedProduct.images.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xxs font-bold text-amber-400 font-mono flex items-center space-x-1">
+                      <ImageIcon className="h-3 w-3" />
+                      <span>Product Photos ({selectedProduct.images.length})</span>
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {selectedProduct.images.map((img, i) => (
+                        <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
+                          <img 
+                            src={img} 
+                            alt={`Product view ${i + 1}`} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                          />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {/* Multiple Videos Section */}
+                {selectedProduct.videos && selectedProduct.videos.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <p className="text-xxs font-bold text-amber-400 font-mono flex items-center space-x-1">
+                      <Film className="h-3 w-3" />
+                      <span>Product Demo Videos ({selectedProduct.videos.length})</span>
+                    </p>
+                    <div className="space-y-3">
+                      {selectedProduct.videos.map((vid) => (
+                        <div key={vid.id} className="space-y-1">
+                          <VideoPlayer
+                            src={vid.videoUrl}
+                            poster={vid.thumbnailUrl}
+                            title={vid.title}
+                            description={vid.description}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Data side */}

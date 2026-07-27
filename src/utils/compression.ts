@@ -5,11 +5,12 @@ import imageCompression from 'browser-image-compression';
  */
 export const getMaxWidthForCategory = (category: string): number => {
   const cat = category.toLowerCase();
-  if (cat.includes('banner')) return 1600; // optimized from 1920
-  if (cat.includes('product')) return 1000; // optimized from 1200
-  if (cat.includes('gallery')) return 1280; // optimized from 1600
-  if (cat.includes('service')) return 1000; // optimized from 1200
-  if (cat.includes('logo')) return 400; // optimized from 500
+  if (cat.includes('mobile')) return 800;
+  if (cat.includes('banner') || cat.includes('offer')) return 1200; // Max 1200px for desktop banners
+  if (cat.includes('product')) return 900;
+  if (cat.includes('gallery')) return 1000;
+  if (cat.includes('service')) return 900;
+  if (cat.includes('logo') || cat.includes('thumb')) return 600;
   return 1000; // sensible default
 };
 
@@ -18,49 +19,90 @@ export const getMaxWidthForCategory = (category: string): number => {
  * If compression succeeds, returns the compressed File object.
  */
 export const compressAndResizeImage = async (file: File, category: string): Promise<File> => {
-  // 11. Prevent uploading files larger than 10 MB
-  if (file.size > 10 * 1024 * 1024) {
-    throw new Error('File size exceeds the 10 MB limit.');
+  // 11. Prevent uploading files larger than 15 MB
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error('File size exceeds the 15 MB limit.');
   }
 
   const maxWidth = getMaxWidthForCategory(category);
-  
-  // High-performance optimization:
-  // - Disable web workers for small files (< 1.2MB) to bypass worker startup/overhead.
-  // - Reduce target maxSizeMB slightly and lower initialQuality to 0.75.
-  // - This results in single-pass compression, avoiding slow CPU-heavy multiple iteration passes.
-  const isLargeFile = file.size > 1.2 * 1024 * 1024;
-  
-  const options = {
-    maxSizeMB: 1.0, // Optimized target size (visually identical, completes in 1 pass)
-    maxWidthOrHeight: maxWidth, // Scaled down dimensions to reduce pixel count by ~40%
-    useWebWorker: isLargeFile, // Only use workers for large files to avoid overhead
-    fileType: 'image/webp', // WebP format for fast encoding
-    initialQuality: 0.75, // 75% quality is extremely fast and light
-  };
 
+  // Fast Native Canvas Compression (~50-100ms)
   try {
-    // 1. Automatically compress every image before upload
-    const compressedBlob = await imageCompression(file, options);
-    
-    // Create webp filename
-    const originalName = file.name;
-    const baseName = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
-    const newName = `${baseName}.webp`;
+    return await new Promise<File>((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
 
-    // Convert blob to File object to retain file properties
-    const compressedFile = new File([compressedBlob], newName, {
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas context unavailable'));
+            return;
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Convert to WebP format with high performance 0.75 quality
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                const compressedFile = new File([blob], `${baseName}.webp`, {
+                  type: 'image/webp',
+                  lastModified: Date.now(),
+                });
+                console.log(`Fast Native Canvas Compression: Original ${(file.size / 1024 / 1024).toFixed(2)}MB -> Compressed ${(compressedFile.size / 1024).toFixed(2)}KB (${width}x${height})`);
+                resolve(compressedFile);
+              } else {
+                reject(new Error('Canvas blob generation returned null'));
+              }
+            },
+            'image/webp',
+            0.75
+          );
+        } catch (canvasErr) {
+          reject(canvasErr);
+        }
+      };
+
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to load image file into memory: ' + err));
+      };
+
+      img.src = url;
+    });
+  } catch (nativeErr) {
+    console.warn('Fast native canvas compression failed, falling back to browser-image-compression:', nativeErr);
+    const options = {
+      maxSizeMB: 0.8,
+      maxWidthOrHeight: maxWidth,
+      useWebWorker: false,
+      fileType: 'image/webp',
+      initialQuality: 0.75,
+    };
+    const compressedBlob = await imageCompression(file, options);
+    const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    return new File([compressedBlob], `${baseName}.webp`, {
       type: 'image/webp',
       lastModified: Date.now(),
     });
-
-    // 14. Never upload the original uncompressed image if compression succeeds
-    return compressedFile;
-  } catch (error: any) {
-    console.error('Image compression failed, uploading original image:', error);
-    // If compression fails, check if we must raise an error or fall back.
-    // Requirement 14 states: "Never upload the original uncompressed image if compression succeeds."
-    // This implies if compression fails, we can fall back or propagate the error. Let's propagate or fall back safely.
-    throw new Error(`Image compression/resizing failed: ${error.message || error}`);
   }
 };

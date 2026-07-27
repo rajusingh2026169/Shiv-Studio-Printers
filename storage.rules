@@ -1,15 +1,11 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow public read access to all uploaded images and diagnostics,
-    // and write access to all authenticated users or general uploads from this applet.
-    match /images/{allPaths=**} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /diagnostics/{allPaths=**} {
-      allow read: if true;
-      allow write: if true;
+    // Public read and write access for media uploads
+    match /{allPaths=**} {
+      allow read, write: if true;
     }
   }
 }
+
+

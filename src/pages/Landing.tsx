@@ -3,8 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, limit, where, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion } from 'motion/react';
 import { db } from '../firebase';
-import { ServiceItem, ProductItem, GalleryItem, BlogItem, ReviewItem, Coupon } from '../types';
+import { ServiceItem, ProductItem, GalleryItem, BlogItem, ReviewItem, Coupon, VideoItem } from '../types';
 import { isCouponActiveAndValid } from '../utils/couponEngine';
+import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
+import { VideoPlayer } from '../components/VideoPlayer';
+import { validateAndFilterVideoDocs } from '../utils/videoUtils';
 import { 
   Camera, 
   Layers, 
@@ -22,20 +25,28 @@ import {
   ChevronRight,
   UploadCloud,
   Copy,
-  Check
+  Check,
+  Play,
+  Film,
+  X
 } from 'lucide-react';
+
+// Modular Feature Flag: Set to true to re-enable Video Gallery on website
+const ENABLE_VIDEO_GALLERY = false;
 
 export const Landing: React.FC = () => {
   const navigate = useNavigate();
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+  const [videoItems, setVideoItems] = useState<VideoItem[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [copiedCouponCode, setCopiedCouponCode] = useState<string | null>(null);
   const [blogs, setBlogs] = useState<BlogItem[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
 
   const [settings, setSettings] = useState<any>({
     studioName: 'Shiv Studio & Printers',
@@ -83,8 +94,42 @@ export const Landing: React.FC = () => {
 
       setCoupons(validHomeCoupons);
     }, (err) => {
-      console.error('Error fetching coupons in Landing:', err);
+      console.warn('Notice (Landing Coupons): Offline mode or network issue for coupons:', err?.message || err);
     });
+
+    // Subscribe to products in real-time
+    const unsubProducts = onSnapshot(
+      query(collection(db, 'products'), limit(6)),
+      (snapshot) => {
+        if (snapshot.metadata.fromCache) {
+          console.log('[Data Source: Local Cache] Products snapshot loaded in Landing:', snapshot.docs.length);
+        } else {
+          console.log('[Data Source: Firestore] Products snapshot loaded in Landing:', snapshot.docs.length);
+        }
+        setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductItem)));
+      },
+      (err) => {
+        console.warn('[Data Source Error] Failed to fetch products in Landing:', err?.message || err);
+      }
+    );
+
+    // Subscribe to videos in real-time (when ENABLE_VIDEO_GALLERY is true)
+    let unsubVideos: (() => void) | undefined;
+    if (ENABLE_VIDEO_GALLERY) {
+      unsubVideos = onSnapshot(
+        collection(db, 'videos'),
+        (snapshot) => {
+          const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VideoItem));
+          const valid = validateAndFilterVideoDocs(loaded);
+          valid.sort((a, b) => (a.order || 0) - (b.order || 0));
+          setVideoItems(valid);
+          console.log('[Data Source: Firestore] Landing videos loaded:', valid.length);
+        },
+        (err) => {
+          console.warn('Notice (Landing Videos): Offline mode or network issue for videos:', err?.message || err);
+        }
+      );
+    }
 
     const fetchData = async () => {
       try {
@@ -94,21 +139,26 @@ export const Landing: React.FC = () => {
         }
 
         const servicesSnap = await getDocs(query(collection(db, 'services'), limit(3)));
-        setServices(servicesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceItem)));
-
-        const productsSnap = await getDocs(query(collection(db, 'products'), limit(3)));
-        setProducts(productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductItem)));
+        if (!servicesSnap.empty) {
+          setServices(servicesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceItem)));
+        }
 
         const gallerySnap = await getDocs(collection(db, 'gallery'));
-        setGalleryItems(gallerySnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as GalleryItem)));
+        if (!gallerySnap.empty) {
+          setGalleryItems(gallerySnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as GalleryItem)));
+        }
 
         const blogsSnap = await getDocs(query(collection(db, 'blogs'), limit(2)));
-        setBlogs(blogsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BlogItem)));
+        if (!blogsSnap.empty) {
+          setBlogs(blogsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BlogItem)));
+        }
 
         const reviewsSnap = await getDocs(collection(db, 'reviews'));
-        setReviews(reviewsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReviewItem)));
-      } catch (err) {
-        console.error('Error fetching landing data:', err);
+        if (!reviewsSnap.empty) {
+          setReviews(reviewsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReviewItem)));
+        }
+      } catch (err: any) {
+        console.warn('Notice (Landing Data): Offline mode or network issue.');
       }
     };
 
@@ -116,21 +166,46 @@ export const Landing: React.FC = () => {
 
     return () => {
       unsubCoupons();
+      unsubProducts();
+      if (unsubVideos) unsubVideos();
     };
   }, []);
 
+  // Combine photo gallery and video items for Landing Page Gallery
+  const combinedGalleryItems = [
+    ...galleryItems.map(item => ({
+      id: item.id,
+      title: item.title,
+      category: item.category,
+      imageUrl: item.imageUrl,
+      type: 'photo' as const,
+      video: null
+    })),
+    ...(ENABLE_VIDEO_GALLERY ? videoItems.map(item => ({
+      id: item.id,
+      title: item.title,
+      category: item.category || 'gallery',
+      imageUrl: item.thumbnailUrl,
+      type: 'video' as const,
+      video: item
+    })) : [])
+  ];
+
   const filteredGallery = activeCategory === 'All' 
-    ? galleryItems 
-    : galleryItems.filter(item => item.category === activeCategory);
+    ? combinedGalleryItems 
+    : combinedGalleryItems.filter(item => (item.category || '').toLowerCase() === activeCategory.toLowerCase());
 
   return (
     <div className="bg-slate-950 text-white selection:bg-amber-500 selection:text-slate-900 overflow-x-hidden">
+      <OfferBannerDisplay position="homepage_top" className="max-w-7xl mx-auto px-4 pt-4" />
       
       {/* 1. HERO SECTION */}
       <section className="relative min-h-[90vh] flex items-center justify-center bg-radial-at-t from-slate-900 via-slate-950 to-black px-4 pt-10 pb-20">
         <div className="absolute inset-0 bg-cover bg-center opacity-10 mix-blend-overlay" style={{ backgroundImage: `url(${settings.heroImageUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1600'})` }}></div>
         
         <div className="relative max-w-5xl mx-auto text-center space-y-8 z-10">
+          <OfferBannerDisplay position="hero" className="my-2" />
+          
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -407,11 +482,11 @@ export const Landing: React.FC = () => {
           </div>
 
           {/* Gallery Grid */}
-          {galleryItems.length === 0 ? (
+          {combinedGalleryItems.length === 0 ? (
             <div className="text-center py-12 bg-slate-900 rounded-3xl border border-slate-800 p-8 space-y-4 max-w-xl mx-auto w-full">
               <Camera className="h-8 w-8 text-amber-500 mx-auto" />
-              <h3 className="text-lg font-bold text-white">No Gallery Images Available</h3>
-              <p className="text-xs text-slate-400">Our high definition portfolio shots and pre-wedding captures are currently being organized.</p>
+              <h3 className="text-lg font-bold text-white">No Gallery Items Available</h3>
+              <p className="text-xs text-slate-400">Our high definition portfolio shots and video reels are currently being organized.</p>
               <Link to="/dashboard" className="inline-block bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs hover:bg-amber-600 transition-all">
                 Upload Gallery
               </Link>
@@ -421,19 +496,52 @@ export const Landing: React.FC = () => {
               {filteredGallery.map((item) => (
                 <div 
                   key={item.id} 
-                  onClick={() => setLightboxImage(item.imageUrl)}
-                  className="group relative cursor-zoom-in rounded-xl overflow-hidden aspect-square md:aspect-[3/4] bg-slate-950 border border-slate-800"
+                  onClick={() => {
+                    if (item.type === 'video' && item.video) {
+                      setSelectedVideo(item.video);
+                    } else {
+                      setLightboxImage(item.imageUrl);
+                    }
+                  }}
+                  className="group relative cursor-pointer rounded-xl overflow-hidden aspect-square md:aspect-[3/4] bg-slate-950 border border-slate-800 shadow-lg hover:border-slate-700 transition-all duration-300"
                 >
                   <img 
-                    src={item.imageUrl} 
+                    src={item.imageUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800'} 
                     alt={item.title} 
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"
                     referrerPolicy="no-referrer"
+                    onLoad={() => {
+                      if (item.type === 'video') {
+                        console.log(`[Video System] thumbnail loaded: ${item.imageUrl}`);
+                        if (item.video?.videoUrl) {
+                          console.log(`[Video System] video URL loaded: ${item.video.videoUrl}`);
+                        }
+                      }
+                    }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+                    }}
                   />
+                  
+                  {item.type === 'video' && (
+                    <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-full bg-amber-500/90 text-slate-950 flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform pl-0.5">
+                        <Play className="w-6 h-6 fill-slate-950" />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                     <div>
-                      <span className="text-xxs font-bold text-amber-500 tracking-wider uppercase font-mono">{item.category}</span>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-xxs font-bold text-amber-500 tracking-wider uppercase font-mono">{item.category}</span>
+                        {item.type === 'video' && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xxs font-bold">
+                            VIDEO
+                          </span>
+                        )}
+                      </div>
                       <h4 className="text-xs sm:text-sm font-semibold text-white mt-1 line-clamp-1">{item.title}</h4>
                     </div>
                   </div>
@@ -675,6 +783,41 @@ export const Landing: React.FC = () => {
             className="max-w-full max-h-[90vh] object-contain rounded-xl border border-slate-800 shadow-2xl"
             referrerPolicy="no-referrer"
           />
+        </div>
+      )}
+
+      {/* Video Lightbox Player Modal */}
+      {selectedVideo && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md"
+          onClick={() => setSelectedVideo(null)}
+        >
+          <div 
+            className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2">
+                <Film className="h-5 w-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">{selectedVideo.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedVideo(null)}
+                className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <VideoPlayer
+              src={selectedVideo.videoUrl}
+              poster={selectedVideo.thumbnailUrl}
+              title={selectedVideo.title}
+              description={selectedVideo.description}
+              autoPlay
+            />
+          </div>
         </div>
       )}
     </div>

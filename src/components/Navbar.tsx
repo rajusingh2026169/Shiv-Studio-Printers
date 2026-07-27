@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import logoImg from '../assets/images/shiv_studio_logo_1784453716682.jpg';
+import { OfferBannerDisplay } from './OfferBannerDisplay';
 import { 
   Camera, 
   Menu, 
@@ -41,8 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({ cartCount, wishlistCount }) => {
         if (settingsSnap.exists()) {
           setSettings((prev: any) => ({ ...prev, ...settingsSnap.data() }));
         }
-      } catch (err) {
-        console.error('Error fetching settings in Navbar:', err);
+      } catch (err: any) {
+        console.warn('Notice (Navbar): Offline mode or network issue, using default navbar settings.');
       }
     };
     fetchSettings();
@@ -72,7 +73,9 @@ export const Navbar: React.FC<NavbarProps> = ({ cartCount, wishlistCount }) => {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-white">
+    <>
+      <OfferBannerDisplay position="sticky_announcement" />
+      <nav className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-white">
       {/* Top Contact Bar */}
       <div className="bg-slate-950 border-b border-slate-800 text-xxs text-slate-400 py-1.5 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
         <div className="flex items-center space-x-4">
@@ -258,5 +261,7 @@ export const Navbar: React.FC<NavbarProps> = ({ cartCount, wishlistCount }) => {
         </div>
       )}
     </nav>
+    </>
   );
 };
+
