@@ -88,16 +88,16 @@ export async function ensureAllStorageUrls(
   images: string[],
   folder: string = 'products'
 ): Promise<string[]> {
-  if (!Array.isArray(images)) return [];
-  const results: string[] = [];
-  for (const img of images) {
-    if (!img) continue;
+  if (!Array.isArray(images) || images.length === 0) return [];
+  
+  const uploadPromises = images.map(async (img) => {
+    if (!img) return '';
     if (img.startsWith('data:')) {
-      const storageUrl = await uploadBase64ToStorage(img, folder);
-      results.push(storageUrl);
-    } else {
-      results.push(img);
+      return await uploadBase64ToStorage(img, folder);
     }
-  }
-  return results;
+    return img;
+  });
+
+  const results = await Promise.all(uploadPromises);
+  return results.filter(Boolean);
 }

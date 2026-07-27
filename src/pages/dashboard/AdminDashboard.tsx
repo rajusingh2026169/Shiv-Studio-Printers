@@ -35,7 +35,9 @@ import {
   Download,
   FolderArchive,
   Film,
-  Gift
+  Gift,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
 import { ImageField } from '../../components/ImageField';
@@ -127,6 +129,15 @@ export const AdminDashboard: React.FC = () => {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [inquiries, setInquiries] = useState<any[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  
+  // Saving states for fast visual user feedback
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSavingService, setIsSavingService] = useState(false);
+  const [isSavingGallery, setIsSavingGallery] = useState(false);
+  const [isSavingOffer, setIsSavingOffer] = useState(false);
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [isSavingBlog, setIsSavingBlog] = useState(false);
   
   const [activeTab, setActiveTab] = useState<
     'analytics' | 'website' | 'services' | 'products' | 'wedding-cards' | 'bookings' | 'orders' | 'expenses' | 'gallery' | 'videos' | 'offers' | 'offer-banners' | 'reviews' | 'customers' | 'inquiries' | 'blogs'
@@ -284,41 +295,46 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const ordersSnap = await getDocs(collection(db, 'orders'));
+      const [
+        ordersSnap,
+        bookingsSnap,
+        productsSnap,
+        expensesSnap,
+        servicesSnap,
+        gallerySnap,
+        offersSnap,
+        reviewsSnap,
+        blogsSnap,
+        inquiriesSnap,
+        usersSnap,
+        settingsDoc
+      ] = await Promise.all([
+        getDocs(collection(db, 'orders')),
+        getDocs(collection(db, 'bookings')),
+        getDocs(collection(db, 'products')),
+        getDocs(collection(db, 'expenses')),
+        getDocs(collection(db, 'services')),
+        getDocs(collection(db, 'gallery')),
+        getDocs(collection(db, 'offers')),
+        getDocs(collection(db, 'reviews')),
+        getDocs(collection(db, 'blogs')),
+        getDocs(collection(db, 'inquiries')),
+        getDocs(collection(db, 'users')),
+        getDoc(doc(db, 'website_settings', 'studio'))
+      ]);
+
       setOrders(ordersSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order)));
-
-      const bookingsSnap = await getDocs(collection(db, 'bookings'));
       setBookings(bookingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking)));
-
-      const productsSnap = await getDocs(collection(db, 'products'));
-      const allProducts = productsSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProductItem));
-      setProducts(allProducts);
-
-      const expensesSnap = await getDocs(collection(db, 'expenses'));
+      setProducts(productsSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProductItem)));
       setExpenses(expensesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Expense)));
-
-      const servicesSnap = await getDocs(collection(db, 'services'));
       setServices(servicesSnap.docs.map(d => ({ id: d.id, ...d.data() } as ServiceItem)));
-
-      const gallerySnap = await getDocs(collection(db, 'gallery'));
       setGallery(gallerySnap.docs.map(d => ({ id: d.id, ...d.data() } as GalleryItem)));
-
-      const offersSnap = await getDocs(collection(db, 'offers'));
       setOffers(offersSnap.docs.map(d => ({ id: d.id, ...d.data() } as OfferItem)));
-
-      const reviewsSnap = await getDocs(collection(db, 'reviews'));
       setReviews(reviewsSnap.docs.map(d => ({ id: d.id, ...d.data() } as ReviewItem)));
-
-      const blogsSnap = await getDocs(collection(db, 'blogs'));
       setBlogs(blogsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BlogItem)));
-
-      const inquiriesSnap = await getDocs(collection(db, 'inquiries'));
       setInquiries(inquiriesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
-
-      const usersSnap = await getDocs(collection(db, 'users'));
       setUsers(usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile)));
 
-      const settingsDoc = await getDoc(doc(db, 'website_settings', 'studio'));
       if (settingsDoc.exists()) {
         setSettings((prev: any) => ({ ...prev, ...settingsDoc.data() }));
       }
@@ -337,14 +353,19 @@ export const AdminDashboard: React.FC = () => {
   // Save Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingSettings(true);
     try {
-      await setDoc(doc(db, 'website_settings', 'studio'), settings);
-      await setDoc(doc(db, 'settings', 'studio'), settings);
+      await Promise.all([
+        setDoc(doc(db, 'website_settings', 'studio'), settings),
+        setDoc(doc(db, 'settings', 'studio'), settings)
+      ]);
       alert('Website Settings updated successfully! Refresh the page to see live updates.');
       fetchDashboardData();
     } catch (err) {
       console.error(err);
       alert('Error updating settings.');
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -525,6 +546,7 @@ export const AdminDashboard: React.FC = () => {
   // Main Save Action
   const saveProductAction = async (andAddAnother: boolean) => {
     if (!validateProductForm()) return;
+    setIsSavingProduct(true);
 
     try {
       const prodId = editingProduct ? editingProduct.id : `prod_${Math.floor(Math.random() * 100000)}`;
@@ -604,14 +626,14 @@ export const AdminDashboard: React.FC = () => {
         }
       };
 
-      // 1. Save gallery images as separate documents in product_images collection
+      // 1. Process images and clean document concurrently in parallel
       const galleryList = pImages.length > 0 ? pImages : (pImage ? [pImage] : []);
-      await saveProductImages(prodId, galleryList, pTitle);
+      const [, cleanDoc] = await Promise.all([
+        saveProductImages(prodId, galleryList, pTitle),
+        prepareCleanProductDoc(prodData, prodId)
+      ]);
 
-      // 2. Prepare clean product document without embedded images array and without base64 strings
-      const cleanDoc = await prepareCleanProductDoc(prodData, prodId);
-
-      // 3. Save clean document to Firestore
+      // 2. Save clean document to Firestore
       await setDoc(doc(db, 'products', prodId), cleanDoc);
       
       if (andAddAnother) {
@@ -627,6 +649,8 @@ export const AdminDashboard: React.FC = () => {
     } catch (err) {
       console.error(err);
       alert('Error saving product: ' + (err as any).message);
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -798,6 +822,7 @@ export const AdminDashboard: React.FC = () => {
   // Service CRUD Save
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingService(true);
     try {
       const servId = editingService ? editingService.id : `serv_${Math.floor(Math.random() * 100000)}`;
       const servData: ServiceItem = {
@@ -820,6 +845,9 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      alert('Error saving service.');
+    } finally {
+      setIsSavingService(false);
     }
   };
 
@@ -842,6 +870,7 @@ export const AdminDashboard: React.FC = () => {
   // Gallery CRUD Save
   const handleSaveGallery = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingGallery(true);
     try {
       const gId = editingGallery ? editingGallery.id : `gal_${Math.floor(Math.random() * 100000)}`;
       const gData: GalleryItem = {
@@ -859,6 +888,9 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      alert('Error saving gallery item.');
+    } finally {
+      setIsSavingGallery(false);
     }
   };
 
@@ -881,6 +913,7 @@ export const AdminDashboard: React.FC = () => {
   // Offer CRUD Save
   const handleSaveOffer = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingOffer(true);
     try {
       const offerId = editingOffer ? editingOffer.id : `off_${Math.floor(Math.random() * 100000)}`;
       const offerData: OfferItem = {
@@ -899,6 +932,9 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      alert('Error saving offer.');
+    } finally {
+      setIsSavingOffer(false);
     }
   };
 
@@ -921,6 +957,7 @@ export const AdminDashboard: React.FC = () => {
   // Review CRUD / Response Save
   const handleSaveReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingReview(true);
     try {
       const revId = editingReview ? editingReview.id : `rev_${Math.floor(Math.random() * 100000)}`;
       const revData: ReviewItem = {
@@ -940,6 +977,9 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      alert('Error saving review.');
+    } finally {
+      setIsSavingReview(false);
     }
   };
 
@@ -962,6 +1002,7 @@ export const AdminDashboard: React.FC = () => {
   // Blog CRUD Handlers
   const handleSaveBlog = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingBlog(true);
     try {
       const blogId = editingBlog ? editingBlog.id : `blog_${Date.now()}`;
       const blogData = {
@@ -982,6 +1023,8 @@ export const AdminDashboard: React.FC = () => {
     } catch (err) {
       console.error(err);
       alert('Failed to save blog article.');
+    } finally {
+      setIsSavingBlog(false);
     }
   };
 
@@ -3519,23 +3562,28 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex items-center gap-3 w-full sm:w-auto">
                   <button 
                     type="button" 
+                    disabled={isSavingProduct}
                     onClick={() => setShowProductModal(false)}
-                    className="flex-1 sm:flex-none px-4 py-3 bg-slate-950 hover:bg-slate-850 text-slate-300 rounded-xl transition-all"
+                    className="flex-1 sm:flex-none px-4 py-3 bg-slate-950 hover:bg-slate-850 text-slate-300 rounded-xl transition-all disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button 
                     type="button" 
+                    disabled={isSavingProduct}
                     onClick={handleSaveProductAndAddAnother}
-                    className="flex-1 sm:flex-none px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all"
+                    className="flex-1 sm:flex-none px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 font-bold"
                   >
-                    Save & Add Another
+                    {isSavingProduct && <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />}
+                    <span>{isSavingProduct ? 'Saving...' : 'Save & Add Another'}</span>
                   </button>
                   <button 
                     type="submit" 
-                    className="flex-1 sm:flex-none px-6 py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl transition-all shadow-lg"
+                    disabled={isSavingProduct}
+                    className="flex-1 sm:flex-none px-6 py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2 font-bold"
                   >
-                    Save Specifications
+                    {isSavingProduct && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />}
+                    <span>{isSavingProduct ? 'Saving Product...' : 'Save Specifications'}</span>
                   </button>
                 </div>
               </div>

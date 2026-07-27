@@ -32,17 +32,16 @@ export async function saveProductImages(
   const cleanUrls = await ensureAllStorageUrls(images, 'products');
 
   try {
-    // 2. Query and remove old product_images for this productId
+    // 2. Query and remove old product_images for this productId in parallel
     const q = query(collection(db, 'product_images'), where('productId', '==', productId));
     const snap = await getDocs(q);
-    for (const d of snap.docs) {
-      await deleteDoc(doc(db, 'product_images', d.id));
+    if (!snap.empty) {
+      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'product_images', d.id))));
     }
 
-    // 3. Insert new product_images documents
-    for (let i = 0; i < cleanUrls.length; i++) {
-      const url = cleanUrls[i];
-      if (!url) continue;
+    // 3. Insert new product_images documents in parallel
+    const insertPromises = cleanUrls.map((url, i) => {
+      if (!url) return Promise.resolve();
 
       const imgDocId = `pimg_${productId}_${i}_${Date.now()}`;
       const imgPayload: ProductImageItem = {
@@ -54,8 +53,10 @@ export async function saveProductImages(
         createdAt: new Date().toISOString()
       };
 
-      await setDoc(doc(db, 'product_images', imgDocId), imgPayload);
-    }
+      return setDoc(doc(db, 'product_images', imgDocId), imgPayload);
+    });
+
+    await Promise.all(insertPromises);
   } catch (err) {
     console.error(`Error saving product_images for ${productId}:`, err);
   }
