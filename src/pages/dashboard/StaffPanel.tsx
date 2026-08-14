@@ -4,6 +4,7 @@ import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Order } from '../../types';
 import { Layers, Printer, ArrowRight, CheckCircle, FileText, Download, FolderArchive } from 'lucide-react';
+import { downloadOriginalFile } from '../../utils/clientPhotoUploader';
 
 export const StaffPanel: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -197,30 +198,32 @@ export const StaffPanel: React.FC = () => {
                     <div className="space-y-2">
                       {order.uploadedFiles && order.uploadedFiles.length > 0 ? (
                         <div className="flex flex-col gap-2">
-                          {order.uploadedFiles.map((f, fIdx) => (
-                            <a
-                              key={fIdx}
-                              href={f.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-950 hover:bg-slate-850 text-amber-400 font-bold border border-slate-850 rounded-lg text-xxs transition-colors max-w-sm truncate"
-                              title={f.name}
-                            >
-                              <Download className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">Download: {f.name}</span>
-                            </a>
-                          ))}
+                          {order.uploadedFiles.map((f, fIdx) => {
+                            const targetUrl = f.originalFileUrl || f.url || '';
+                            const targetName = f.originalFileName || f.name || `Asset_${fIdx + 1}.jpg`;
+                            return (
+                              <button
+                                key={fIdx}
+                                type="button"
+                                onClick={() => downloadOriginalFile(targetUrl, targetName)}
+                                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-950 hover:bg-slate-850 text-amber-400 font-bold border border-slate-850 rounded-lg text-xxs transition-colors max-w-sm truncate"
+                                title="Download Original File"
+                              >
+                                <Download className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">Download Original: {targetName}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       ) : order.uploadedFileUrl ? (
-                        <a
-                          href={order.uploadedFileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => downloadOriginalFile(order.uploadedFileUrl!, order.uploadedFileName || 'original_photo.jpg')}
                           className="inline-flex items-center space-x-1 px-3 py-1.5 bg-slate-950 hover:bg-slate-850 text-amber-400 font-bold border border-slate-850 rounded-lg text-xxs transition-colors"
                         >
                           <Download className="h-3.5 w-3.5" />
-                          <span>Download Client Layout: {order.uploadedFileName}</span>
-                        </a>
+                          <span>Download Original Client File: {order.uploadedFileName}</span>
+                        </button>
                       ) : (
                         <span className="text-slate-600 font-mono italic text-xxs">No raw files uploaded by customer</span>
                       )}

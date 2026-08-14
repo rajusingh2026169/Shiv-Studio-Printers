@@ -4,9 +4,11 @@ import { collection, addDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { db, storage } from '../firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { compressAndResizeImage } from '../utils/compression';
-import { CartItem, ProductItem, Order, CouponValidationResult } from '../types';
+
+import { CartItem, ProductItem, Order, CouponValidationResult, UploadedFileRecord } from '../types';
 import { validateCoupon, redeemCoupon, findAutoApplyCoupon, CartItemForValidation } from '../utils/couponEngine';
+import { uploadOriginalClientPhoto, formatBytes, cleanFileName, UploadProgressDetails } from '../utils/clientPhotoUploader';
+import { sendOrderMessage } from '../utils/messageService';
 import { 
   Trash2, 
   Plus, 
@@ -20,7 +22,8 @@ import {
   CreditCard,
   CheckCircle,
   X,
-  FileCheck
+  FileCheck,
+  MessageSquare
 } from 'lucide-react';
 import { InvoiceModal } from '../components/InvoiceModal';
 
@@ -72,10 +75,47 @@ export const Cart: React.FC<CartProps> = ({
   const [email, setEmail] = useState(userProfile?.email || '');
   const [address, setAddress] = useState(userProfile?.address || '');
 
-  // File Upload State
-  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; url: string }[]>([]);
-  const [uploadingFiles, setUploadingFiles] = useState<{ name: string; progress: number }[]>([]);
+  // File Upload State & Optional Remark
+  interface UploadingItem {
+    id: string;
+    file: File;
+    name: string;
+    progress: number;
+    bytesTransferred?: number;
+    totalBytes?: number;
+    speedFormatted?: string;
+    transferredFormatted?: string;
+    etaFormatted?: string;
+    size: number;
+    type: string;
+    status: 'queued' | 'uploading' | 'error';
+    errorMessage?: string;
+  }
+
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileRecord[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingItem[]>([]);
+  const [customerRemark, setCustomerRemark] = useState('');
   const [dragOver, setDragOver] = useState(false);
+
+  // Sync ref to track items actively being initialized to prevent duplicate execution
+  const processingIdsRef = React.useRef<Set<string>>(new Set());
+
+  // Queue processor effect to handle parallel uploads cleanly without race conditions
+  useEffect(() => {
+    const activeCount = uploadingFiles.filter(item => item.status === 'uploading').length;
+    if (activeCount >= 2) return;
+
+    const nextQueuedItem = uploadingFiles.find(
+      item => item.status === 'queued' && !processingIdsRef.current.has(item.id)
+    );
+    if (!nextQueuedItem) return;
+
+    // Mark item as being processed immediately in synchronous ref
+    processingIdsRef.current.add(nextQueuedItem.id);
+
+    setUploadingFiles(prev => prev.map(u => u.id === nextQueuedItem.id ? { ...u, status: 'uploading' } : u));
+    executeSingleFileUpload(nextQueuedItem);
+  }, [uploadingFiles]);
 
   // Promo Coupon States
   const [couponCode, setCouponCode] = useState('');
@@ -246,171 +286,76 @@ export const Cart: React.FC<CartProps> = ({
     setUserClearedCoupon(true);
   };
 
-  // Compact Base64 for Firestore-safe storage (under 30KB fallback)
-  const getSmallBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      if (!file.type.startsWith('image/')) {
-        // If not an image, try to return as base64 if small, otherwise use a placeholder
-        if (file.size < 150 * 1024) {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string || '');
-          reader.onerror = () => resolve('');
-          reader.readAsDataURL(file);
-        } else {
-          resolve('https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=600');
-        }
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
-          const MAX_DIM = 600; // Safe compact size to guarantee under Firestore 1MB document limit
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.70); // 70% JPEG quality for super light payload
-            resolve(dataUrl);
-          } else {
-            resolve(e.target?.result as string || '');
-          }
-        };
-        img.onerror = () => {
-          resolve(e.target?.result as string || '');
-        };
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => {
-        resolve('');
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Upload File Simulator (robust, works without cold starts/CORS issues)
+  // Upload original customer file directly to Firebase Storage without compression/resizing
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      simulateUploads(Array.from(files));
+      processSelectedFiles(Array.from(files));
+      e.target.value = '';
     }
   };
 
-  const simulateUploads = (files: File[]) => {
-    // Filter out files that are already uploading or uploaded to prevent duplicate uploads
-    const filesToUpload = files.filter(f => 
-      !uploadingFiles.some(uf => uf.name === f.name) && 
-      !uploadedFiles.some(uf => uf.name === f.name)
-    );
+  const processSelectedFiles = (files: File[]) => {
+    const filesToUpload = files.filter(f => {
+      const cName = cleanFileName(f.name);
+      return !uploadingFiles.some(uf => uf.name === cName || uf.name === f.name) && 
+             !uploadedFiles.some(uf => (uf.originalFileName || uf.name) === cName || (uf.originalFileName || uf.name) === f.name);
+    });
 
     if (filesToUpload.length === 0) return;
 
-    // Add all new files to the uploading list with 10% progress initial
-    const newUploading = filesToUpload.map(f => ({ name: f.name, progress: 10 }));
-    setUploadingFiles(prev => [...prev, ...newUploading]);
+    const newItems: UploadingItem[] = filesToUpload.map((file, idx) => ({
+      id: `up_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+      file,
+      name: cleanFileName(file.name),
+      progress: 0,
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+      status: 'queued'
+    }));
 
-    filesToUpload.forEach(async (file) => {
-      let fileToSubmit: File = file;
-      
-      // Compress if it is an image using the existing app compression utility
-      if (file.type.startsWith('image/')) {
-        try {
-          const compressed = await compressAndResizeImage(file, 'customer_uploads');
-          fileToSubmit = compressed;
-        } catch (compErr) {
-          console.warn('Compression failed, uploading original image instead', compErr);
-        }
-      }
-
-      // Check if storage is a real Firebase Storage instance and ref function is available
-      const isRealStorage = storage && typeof ref === 'function';
-
-      if (isRealStorage) {
-        try {
-          const cleanName = fileToSubmit.name.replace(/[^a-zA-Z0-9.]/g, '_');
-          const filePath = `customer_uploads/${Date.now()}_${cleanName}`;
-          const storageRef = ref(storage, filePath);
-          const uploadTask = uploadBytesResumable(storageRef, fileToSubmit);
-
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-              // clamp between 10% and 95% during upload state
-              const safeProgress = Math.max(10, Math.min(95, progress));
-              setUploadingFiles(prev => prev.map(f => f.name === file.name ? { ...f, progress: safeProgress } : f));
-            },
-            async (err) => {
-              console.warn('Firebase Storage direct upload failed, triggering fallback base64...', err);
-              await triggerBase64Fallback(file);
-            },
-            async () => {
-              try {
-                const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
-                setUploadedFiles(prev => {
-                  if (prev.some(f => f.name === file.name)) return prev;
-                  return [...prev, { name: file.name, url: downloadUrl }];
-                });
-              } catch (urlErr) {
-                console.error('Failed to get download URL, triggering fallback...', urlErr);
-                await triggerBase64Fallback(file);
-              }
-            }
-          );
-          return; // Done for this file using Firebase Storage
-        } catch (uploadErr) {
-          console.warn('Failed to initialize Firebase Storage upload, using fallback...', uploadErr);
-        }
-      }
-
-      // If we reach here, either storage is mock, or upload initial setup failed. Use Base64 Fallback directly.
-      await triggerBase64Fallback(file);
-    });
+    setUploadingFiles(prev => [...prev, ...newItems]);
   };
 
-  // Helper helper to trigger base64 fallback seamlessly
-  const triggerBase64Fallback = async (file: File) => {
+  const executeSingleFileUpload = async (item: UploadingItem) => {
+    setUploadingFiles(prev => prev.map(u => u.id === item.id ? { ...u, status: 'uploading', errorMessage: undefined } : u));
+
     try {
-      const base64Url = await getSmallBase64(file);
-      
-      let progress = 10;
-      const interval = setInterval(() => {
-        progress += 30;
-        if (progress >= 100) {
-          clearInterval(interval);
-          setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
-          setUploadedFiles(prev => {
-            if (prev.some(f => f.name === file.name)) return prev;
-            return [...prev, {
-              name: file.name,
-              url: base64Url || ''
-            }];
-          });
-        } else {
-          setUploadingFiles(prev => prev.map(f => f.name === file.name ? { ...f, progress } : f));
+      const record = await uploadOriginalClientPhoto(
+        item.file,
+        fullName || 'Customer',
+        (details: UploadProgressDetails) => {
+          setUploadingFiles(prev => prev.map(u => u.id === item.id ? {
+            ...u,
+            status: 'uploading',
+            progress: details.progress,
+            bytesTransferred: details.bytesTransferred,
+            totalBytes: details.totalBytes,
+            speedFormatted: details.speedFormatted,
+            transferredFormatted: details.transferredFormatted,
+            etaFormatted: details.etaFormatted
+          } : u));
         }
-      }, 100);
-    } catch (fallbackErr) {
-      console.error('Fallback failed:', fallbackErr);
-      setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
+      );
+
+      // Upload completed & verified successfully!
+      processingIdsRef.current.delete(item.id);
+      setUploadingFiles(prev => prev.filter(u => u.id !== item.id));
+      setUploadedFiles(prev => {
+        if (prev.some(f => (f.originalFileName || f.name) === item.name)) return prev;
+        return [...prev, record];
+      });
+    } catch (uploadErr: any) {
+      console.error(`Firebase Storage upload failed for ${item.name}:`, uploadErr);
+      processingIdsRef.current.delete(item.id);
+      const errorMsg = uploadErr?.message || uploadErr?.code || String(uploadErr);
+      setUploadingFiles(prev => prev.map(u => u.id === item.id ? { ...u, status: 'error', errorMessage: errorMsg } : u));
     }
+  };
+
+  const handleRetryUpload = (item: UploadingItem) => {
+    processingIdsRef.current.delete(item.id);
+    setUploadingFiles(prev => prev.map(u => u.id === item.id ? { ...u, status: 'queued', progress: 0, errorMessage: undefined } : u));
   };
 
   // Drag and drop events
@@ -428,7 +373,7 @@ export const Cart: React.FC<CartProps> = ({
     setDragOver(false);
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      simulateUploads(Array.from(files));
+      processSelectedFiles(Array.from(files));
     }
   };
 
@@ -440,14 +385,47 @@ export const Cart: React.FC<CartProps> = ({
       alert('Please fill out all billing and shipping addresses.');
       return;
     }
+    if (uploadingFiles.some(u => u.status === 'uploading')) {
+      alert('Please wait until photo upload reaches 100% before placing the order.');
+      return;
+    }
+    if (uploadingFiles.some(u => u.status === 'error')) {
+      alert('One or more photo uploads failed. Please retry or remove failed uploads before placing the order.');
+      return;
+    }
     // Launch Razorpay Simulator
     setShowRazorpay(true);
   };
 
   const handleCompleteRazorpayPayment = async () => {
+    if (uploadingFiles.some(u => u.status === 'uploading')) {
+      alert('Please wait until photo upload reaches 100% before placing the order.');
+      return;
+    }
+    if (uploadingFiles.some(u => u.status === 'error')) {
+      alert('One or more photo uploads failed. Please retry or remove failed uploads before placing the order.');
+      return;
+    }
     setIsPaying(true);
     try {
       const orderId = `LM-${Math.floor(100000 + Math.random() * 900000)}`;
+      const sanitizedUploadedFiles: UploadedFileRecord[] = uploadedFiles.map(f => ({
+        originalFileUrl: (f.originalFileUrl && !f.originalFileUrl.startsWith('data:')) ? f.originalFileUrl : (f.url && !f.url.startsWith('data:') ? f.url : ''),
+        originalFileName: f.originalFileName || f.name || 'photo.jpg',
+        originalFileType: f.originalFileType || 'image/jpeg',
+        originalFileSize: f.originalFileSize || 0,
+        originalWidth: f.originalWidth || 0,
+        originalHeight: f.originalHeight || 0,
+        uploadedAt: f.uploadedAt || new Date().toISOString(),
+        uploadedBy: f.uploadedBy || fullName || 'Customer',
+        thumbnailUrl: (f.thumbnailUrl && !f.thumbnailUrl.startsWith('data:')) ? f.thumbnailUrl : (f.originalFileUrl && !f.originalFileUrl.startsWith('data:') ? f.originalFileUrl : ''),
+        previewUrl: (f.previewUrl && !f.previewUrl.startsWith('data:')) ? f.previewUrl : (f.originalFileUrl && !f.originalFileUrl.startsWith('data:') ? f.originalFileUrl : ''),
+        name: f.name || f.originalFileName || 'photo.jpg',
+        url: (f.url && !f.url.startsWith('data:')) ? f.url : (f.originalFileUrl && !f.originalFileUrl.startsWith('data:') ? f.originalFileUrl : ''),
+      }));
+
+      const primaryFileUrl = sanitizedUploadedFiles[0]?.originalFileUrl || sanitizedUploadedFiles[0]?.url || '';
+
       const orderData: Order = {
         id: orderId,
         customerId: currentUser?.uid || 'anonymous',
@@ -459,12 +437,13 @@ export const Cart: React.FC<CartProps> = ({
           productId: item.product.id,
           productTitle: item.product.title,
           price: item.product.discountPrice || item.product.price,
-          image: item.product.image,
+          image: item.product.image?.startsWith('data:') ? '' : item.product.image,
           quantity: item.quantity
         })),
-        uploadedFileName: uploadedFiles.map(f => f.name).join(', ') || '',
-        uploadedFileUrl: uploadedFiles[0]?.url || '',
-        uploadedFiles: uploadedFiles,
+        uploadedFileName: sanitizedUploadedFiles.map(f => f.originalFileName || f.name).join(', ') || '',
+        uploadedFileUrl: primaryFileUrl,
+        uploadedFiles: sanitizedUploadedFiles,
+        customerRemark: customerRemark.trim(),
         subtotal,
         gst,
         gstEnabled: cart.some(item => item.product.enableGst !== false),
@@ -649,43 +628,152 @@ export const Cart: React.FC<CartProps> = ({
                 {/* Upload Status */}
                 {uploadingFiles.length > 0 && (
                   <div className="space-y-2">
-                    {uploadingFiles.map((file, idx) => (
-                      <div key={idx} className="bg-slate-950 p-3 rounded-lg border border-slate-850 flex items-center justify-between gap-4 text-xs font-mono">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-slate-400 truncate">Uploading {file.name}...</p>
-                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
-                            <div className="bg-amber-500 h-full transition-all duration-200" style={{ width: `${file.progress}%` }}></div>
+                    <p className="text-xxs font-semibold uppercase tracking-wider font-mono text-amber-400 mt-2 flex items-center gap-1.5">
+                      <span className="animate-pulse">●</span> Active Photo Uploads ({uploadingFiles.length})
+                    </p>
+                    {uploadingFiles.map((fileItem) => {
+                      const isError = fileItem.status === 'error';
+                      const isQueued = fileItem.status === 'queued';
+                      return (
+                        <div
+                          key={fileItem.id}
+                          className={`p-3 rounded-xl border flex flex-col gap-2 text-xs font-mono transition-all ${
+                            isError
+                              ? 'bg-rose-950/30 border-rose-800/80'
+                              : isQueued
+                              ? 'bg-slate-900/60 border-slate-800/80 opacity-80'
+                              : 'bg-slate-950 border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-white font-bold truncate">{fileItem.name}</p>
+                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xxs">
+                                <span className="text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                  Original Quality
+                                </span>
+                                {isQueued ? (
+                                  <span className="text-slate-400 font-semibold bg-slate-800 px-1.5 py-0.5 rounded">
+                                    In Queue (Waiting...)
+                                  </span>
+                                ) : !isError && (
+                                  <>
+                                    <span className="text-slate-300 font-medium">
+                                      {fileItem.transferredFormatted || formatBytes(fileItem.size)}
+                                    </span>
+                                    {fileItem.speedFormatted && (
+                                      <span className="text-amber-300 font-semibold bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                                        ⚡ {fileItem.speedFormatted}
+                                      </span>
+                                    )}
+                                    {fileItem.etaFormatted && (
+                                      <span className="text-slate-400">
+                                        ⏱️ ETA: {fileItem.etaFormatted}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isError ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetryUpload(fileItem)}
+                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xxs font-bold transition-all shadow"
+                                >
+                                  ↻ Retry
+                                </button>
+                              ) : isQueued ? (
+                                <span className="text-slate-500 text-xxs font-semibold uppercase">Queued</span>
+                              ) : (
+                                <span className="font-bold text-amber-400 text-sm">{fileItem.progress}%</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  processingIdsRef.current.delete(fileItem.id);
+                                  setUploadingFiles(prev => prev.filter(u => u.id !== fileItem.id));
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-400 rounded transition-all font-bold"
+                                title="Cancel / Remove"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
+
+                          {!isError ? (
+                            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-150 ${isQueued ? 'bg-slate-600' : 'bg-amber-500'}`}
+                                style={{ width: `${isQueued ? 0 : fileItem.progress}%` }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-300 text-xxs space-y-1">
+                              <span className="font-bold uppercase text-rose-400 block font-mono flex items-center gap-1">
+                                ⚠ Firebase Storage Error:
+                              </span>
+                              <p className="break-words font-sans">{fileItem.errorMessage || 'Upload failed. Please check network connection or retry.'}</p>
+                            </div>
+                          )}
                         </div>
-                        <span className="font-bold text-amber-400 shrink-0">{file.progress}%</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
                 {uploadedFiles.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xxs font-semibold uppercase tracking-wider font-mono text-slate-500 mt-2">Uploaded Custom Designs ({uploadedFiles.length})</p>
-                    {uploadedFiles.map((file, idx) => (
-                      <div key={idx} className="bg-amber-500/10 p-3 rounded-lg border border-amber-500/20 flex items-center justify-between gap-4 text-xs">
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <FileCheck className="h-5 w-5 text-emerald-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-bold text-white truncate">{file.name}</p>
-                            <p className="text-xxs text-slate-500 mt-0.5">Custom layout linked to your print invoice</p>
+                    <p className="text-xxs font-semibold uppercase tracking-wider font-mono text-emerald-400 mt-2 flex items-center gap-1">
+                      <CheckCircle className="h-3 w-3" /> Uploaded Custom Assets ({uploadedFiles.length})
+                    </p>
+                    {uploadedFiles.map((file, idx) => {
+                      const fName = file.originalFileName || file.name || `File_${idx + 1}`;
+                      const fSize = file.originalFileSize ? formatBytes(file.originalFileSize) : 'Raw File';
+                      const fType = file.originalFileType ? file.originalFileType.split('/')[1]?.toUpperCase() : 'FILE';
+                      return (
+                        <div key={idx} className="bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 flex items-center justify-between gap-4 text-xs">
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <FileCheck className="h-5 w-5 text-emerald-400 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="font-bold text-white truncate">{fName}</p>
+                              <div className="flex items-center gap-2 mt-0.5 text-xxs font-mono">
+                                <span className="text-emerald-400 font-bold">{fType} • {fSize}</span>
+                                <span className="text-slate-400">• Original Quality ✓</span>
+                              </div>
+                            </div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => setUploadedFiles(prev => prev.filter((_, fIdx) => fIdx !== idx))}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-900 rounded-lg transition-all shrink-0 font-bold"
+                            title="Remove file"
+                          >
+                            ✕
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setUploadedFiles(prev => prev.filter((_, fIdx) => fIdx !== idx))}
-                          className="p-1 text-slate-400 hover:text-rose-500 shrink-0 font-bold"
-                          title="Remove file"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
+
+                {/* Optional Customer Remark Section */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-2 uppercase tracking-wider">
+                    <MessageSquare className="h-4 w-4 text-amber-500" />
+                    <span>OPTIONAL REMARK / REQUIREMENT</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customerRemark}
+                    onChange={(e) => setCustomerRemark(e.target.value)}
+                    placeholder="Please mention any special requirement for your order (e.g. Please crop the photo from the center, or print in matte finish)..."
+                    className="w-full bg-slate-950 border border-slate-850 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:border-amber-500/50 outline-none transition-all resize-none font-sans"
+                  />
+                  <p className="text-[10px] text-slate-500 font-mono">Optional special instructions for studio printing team. Can be left empty.</p>
+                </div>
               </div>
             </div>
 

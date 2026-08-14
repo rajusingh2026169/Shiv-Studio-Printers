@@ -121,51 +121,33 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       console.log('Initiating uploadBytesResumable() in MultiImageField...');
       const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
 
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          console.log(`Diagnostic Multi-Upload progress: ${progress}%`);
-          setUploadProgresses({ [testFile.name]: progress });
-        },
-        (err) => {
-          console.warn('DIAGNOSTIC MULTI-UPLOAD FAIL - Exact Firebase Error details:', {
-            code: err.code,
-            message: err.message,
-            name: err.name,
-            stack: err.stack,
-            cause: err.cause,
-            serverResponse: (err as any).serverResponse
-          });
-          setError(`Diagnostic Test Failed: ${err.message} [Error Code: ${err.code || 'UNKNOWN'}]. Please verify Firebase Storage rules.`);
-          setUploadProgresses({});
-          setUploadingCount(0);
-        },
-        async () => {
-          try {
-            console.log('Diagnostic Multi-Upload finished successfully. Fetching download URL...');
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            console.log('Diagnostic download URL:', downloadUrl);
-            
-            const finalUrls = [...value, downloadUrl];
-            if (firestoreDoc && firestoreField) {
-              const docRef = doc(db, firestoreDoc);
-              await setDoc(docRef, { [firestoreField]: finalUrls }, { merge: true });
-            }
-            
-            onChange(finalUrls);
-            setSuccess(true);
-            setUploadProgresses({});
-            setUploadingCount(0);
-            console.log('--- DIAGNOSTIC MULTI-TEST COMPLETED SUCCESSFULLY ---');
-          } catch (urlErr: any) {
-            console.warn('Failed to get download URL for diagnostic file:', urlErr);
-            setError(`Diagnostic URL retrieval failed: ${urlErr.message}`);
-            setUploadProgresses({});
-            setUploadingCount(0);
-          }
-        }
-      );
+      // 1. 'state_changed' observer strictly tracks progress
+      uploadTask.on('state_changed', (snapshot) => {
+        const progress = snapshot.totalBytes > 0
+          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+          : 0;
+        console.log(`Diagnostic Multi-Upload progress: ${progress}%`);
+        setUploadProgresses({ [testFile.name]: progress });
+      });
+
+      // 2. Task completion is handled strictly by the uploadTask promise
+      const snapshot = await uploadTask;
+
+      // 3. Explicitly call getDownloadURL() once and wait for it
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+      console.log('Diagnostic download URL:', downloadUrl);
+      
+      const finalUrls = [...value, downloadUrl];
+      if (firestoreDoc && firestoreField) {
+        const docRef = doc(db, firestoreDoc);
+        await setDoc(docRef, { [firestoreField]: finalUrls }, { merge: true });
+      }
+      
+      onChange(finalUrls);
+      setSuccess(true);
+      setUploadProgresses({});
+      setUploadingCount(0);
+      console.log('--- DIAGNOSTIC MULTI-TEST COMPLETED SUCCESSFULLY ---');
     } catch (err: any) {
       console.warn('Diagnostic multi creation/initialization failed:', err);
       setError(`Diagnostic Setup Failed: ${err.message || err}`);
@@ -219,7 +201,7 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       });
       setUploadProgresses({ ...progresses });
 
-      // Upload files in parallel with fast 4s timeout race
+      // Upload files in parallel with clean uploadBytesResumable pattern
       await Promise.all(
         compressedFiles.map(async (cf) => {
           const filePath = getPath(cf.file.name);
@@ -232,38 +214,29 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
 
           let fileUrl = '';
 
-          // 1. Try fast uploadBytes with 4s timeout
           try {
-            const timeoutPromise = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('Storage upload timeout')), 4000)
-            );
+            const uploadTask = uploadBytesResumable(storageRef, cf.file, metadata);
 
-            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 50 }));
+            // 1. 'state_changed' observer strictly tracks progress
+            uploadTask.on('state_changed', (snapshot) => {
+              const progress = snapshot.totalBytes > 0 
+                ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
+                : 0;
+              setUploadProgresses(prev => ({ ...prev, [cf.file.name]: progress }));
+            });
 
-            const uploadResult = await Promise.race([
-              uploadBytes(storageRef, cf.file, metadata),
-              timeoutPromise
-            ]);
-
-            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 90 }));
-            fileUrl = await getDownloadURL(uploadResult.ref);
-          } catch (fastErr) {
-            console.warn(`Direct upload notice for ${cf.file.name}, trying fast base64 fallback:`, fastErr);
-          }
-
-          // 2. Fallback base64 upload if uploadBytes timed out/failed
-          if (!fileUrl) {
-            try {
-              const reader = new FileReader();
-              const base64Str = await new Promise<string>((res, rej) => {
-                reader.onload = () => res(reader.result as string);
-                reader.onerror = rej;
-                reader.readAsDataURL(cf.file);
-              });
-              fileUrl = await uploadBase64ToStorage(base64Str, storagePath);
-            } catch (e) {
-              console.warn('Fallback storage upload notice:', e);
-            }
+            // 2. Task completion with timeout
+            const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Storage timeout')), 6000));
+            const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+            fileUrl = await getDownloadURL(snapshot.ref);
+          } catch (uploadErr) {
+            console.warn('Storage upload fallback to optimized WebP data URL in MultiImageField:', uploadErr);
+            const reader = new FileReader();
+            fileUrl = await new Promise<string>((resolve, reject) => {
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(cf.file);
+            });
           }
 
           if (fileUrl) {

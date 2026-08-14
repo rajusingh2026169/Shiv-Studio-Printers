@@ -17,9 +17,9 @@ export const db =
 const rawBucket = firebaseConfig.storageBucket || `${firebaseConfig.projectId}.firebasestorage.app`;
 export const storage = getStorage(app);
 
-// Set maximum upload retry time to 10 seconds (10,000 ms) to avoid long hanging retries
-storage.maxUploadRetryTime = 10000;
-storage.maxOperationRetryTime = 10000;
+// Storage retry configuration (120,000 ms / 2 mins for smooth multi-megabyte uploads)
+storage.maxUploadRetryTime = 120000;
+storage.maxOperationRetryTime = 120000;
 
 console.log('Firebase initialized:', !!app);
 console.log('Storage connected:', !!storage);

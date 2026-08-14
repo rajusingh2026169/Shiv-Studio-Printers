@@ -126,74 +126,25 @@ export const ImageField: React.FC<ImageFieldProps> = ({
         }
       };
 
-      let downloadUrl = '';
-      let isSuccess = false;
+      // Clean uploadBytesResumable implementation
+      const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
 
-      // Fast direct uploadBytes
-      try {
-        console.log('Progress 50%');
-        setUploadProgress(50);
-        const uploadResult = await uploadBytes(storageRef, testFile, metadata);
-        downloadUrl = await getDownloadURL(uploadResult.ref);
-        isSuccess = true;
-      } catch (fastErr) {
-        console.warn('Diagnostic uploadBytes notice:', fastErr);
-      }
+      // 1. 'state_changed' observer strictly tracks progress
+      uploadTask.on('state_changed', (snapshot) => {
+        const progress = snapshot.totalBytes > 0 
+          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
+          : 0;
+        console.log(`Progress ${progress}%`);
+        setUploadProgress(progress);
+      });
 
-      if (!isSuccess) {
-        const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
+      // 2. Task completion is handled strictly by the uploadTask promise
+      const snapshot = await uploadTask;
 
-        await new Promise<void>((resolve) => {
-          let timedOut = false;
-          const timeoutId = setTimeout(() => {
-            timedOut = true;
-            try { uploadTask.cancel(); } catch (e) {}
-            console.error('Upload Timeout. Please Retry.');
-            setError('Upload Timeout. Please Retry.');
-            setUploadProgress(null);
-            setIsCompressing(false);
-            resolve();
-          }, 60000);
+      // 3. Explicitly call getDownloadURL() once and wait for it
+      const downloadUrl = await getDownloadURL(snapshot.ref);
 
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              if (timedOut) return;
-              const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-              console.log(`Progress ${progress}%`);
-              setUploadProgress(progress);
-            },
-            (err) => {
-              clearTimeout(timeoutId);
-              if (timedOut) return;
-
-              if (err.code === 'storage/canceled') {
-                console.error('Upload Timeout. Please Retry.');
-                setError('Upload Timeout. Please Retry.');
-              } else {
-                console.error('❌ DIAGNOSTIC UPLOAD FAIL:', err);
-                setError(`Diagnostic Test Failed [Code: ${err.code || 'UNKNOWN'}]: ${err.message}. Please check Firebase Storage rules and network connection.`);
-              }
-              resolve();
-            },
-            async () => {
-              clearTimeout(timeoutId);
-              if (timedOut) return;
-
-              try {
-                downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                isSuccess = true;
-              } catch (urlErr: any) {
-                console.error('Failed to get download URL for diagnostic file:', urlErr);
-                setError(`Diagnostic URL retrieval failed: ${urlErr.message}`);
-              }
-              resolve();
-            }
-          );
-        });
-      }
-
-      if (isSuccess && downloadUrl) {
+      if (downloadUrl) {
         console.log('Upload Finished');
         console.log('Download URL Generated', downloadUrl);
 
@@ -256,13 +207,6 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       setIsCompressing(false);
       setUploadProgress(15);
 
-      // Smooth progress ticker
-      let currentProg = 15;
-      progressTimer = setInterval(() => {
-        currentProg = Math.min(currentProg + Math.floor(Math.random() * 12 + 5), 90);
-        setUploadProgress(currentProg);
-      }, 150);
-
       const filePath = getPath(compressedFile.name);
       const storageRef = ref(storage, filePath);
 
@@ -272,46 +216,33 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       };
 
       let downloadUrl = '';
-      let isSuccess = false;
 
-      // Fast direct uploadBytes with 3.5s timeout race
       try {
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Storage upload timeout')), 3500)
-        );
+        const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
 
-        const uploadResult = await Promise.race([
-          uploadBytes(storageRef, compressedFile, metadata),
-          timeoutPromise
-        ]);
+        // 1. 'state_changed' observer tracks progress
+        uploadTask.on('state_changed', (snapshot) => {
+          const progress = snapshot.totalBytes > 0 
+            ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
+            : 0;
+          setUploadProgress(progress);
+        });
 
-        downloadUrl = await getDownloadURL(uploadResult.ref);
-        isSuccess = true;
-      } catch (fastErr) {
-        console.warn('Direct uploadBytes notice or timeout, trying fallback upload:', fastErr);
+        // 2. Task completion with 6s timeout
+        const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Storage timeout')), 6000));
+        const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+        downloadUrl = await getDownloadURL(snapshot.ref);
+      } catch (uploadErr) {
+        console.warn('Storage upload fallback to optimized WebP data URL:', uploadErr);
+        const reader = new FileReader();
+        downloadUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(compressedFile);
+        });
       }
 
-      // Fast Base64 / Storage Fallback
-      if (!isSuccess) {
-        try {
-          const reader = new FileReader();
-          const base64Str = await new Promise<string>((res, rej) => {
-            reader.onload = () => res(reader.result as string);
-            reader.onerror = rej;
-            reader.readAsDataURL(compressedFile);
-          });
-          downloadUrl = await uploadBase64ToStorage(base64Str, storagePath);
-          if (downloadUrl) {
-            isSuccess = true;
-          }
-        } catch (fbErr) {
-          console.warn('Fallback base64 upload notice:', fbErr);
-        }
-      }
-
-      if (progressTimer) clearInterval(progressTimer);
-
-      if (isSuccess && downloadUrl) {
+      if (downloadUrl) {
         setUploadProgress(100);
         console.log('Upload Finished');
         console.log('Download URL Generated', downloadUrl);

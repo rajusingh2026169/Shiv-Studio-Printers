@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Order, Booking, ProductItem, Expense, ServiceItem, GalleryItem, OfferItem, ReviewItem, UserProfile, BlogItem } from '../../types';
 import { 
@@ -40,6 +40,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
+import { OrderMessageModal } from '../../components/OrderMessageModal';
+import { downloadOriginalFile, getStoredOriginalBlob } from '../../utils/clientPhotoUploader';
 import { ImageField } from '../../components/ImageField';
 import { MultiImageField } from '../../components/MultiImageField';
 import { AdminCouponManager } from '../../components/AdminCouponManager';
@@ -63,6 +65,11 @@ export const AdminDashboard: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+
+  // Selected Order for Messaging Modal
+  const [selectedOrderForMessage, setSelectedOrderForMessage] = useState<Order | null>(null);
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState<boolean>(false);
+  const [unreadOrderMap, setUnreadOrderMap] = useState<Record<string, boolean>>({});
 
   // Extended Product Fields State
   const [pSku, setPSku] = useState('');
@@ -290,7 +297,24 @@ export const AdminDashboard: React.FC = () => {
       console.error('[Data Source Error] Admin products listener error:', err);
     });
 
-    return () => unsubscribeProducts();
+    // Subscribe to unread messages from customers
+    const messagesRef = collection(db, 'messages');
+    const qMsg = query(messagesRef, where('senderType', '==', 'customer'), where('read', '==', false));
+    const unsubscribeMessages = onSnapshot(qMsg, (snap) => {
+      const map: Record<string, boolean> = {};
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (data.orderId) map[data.orderId] = true;
+      });
+      setUnreadOrderMap(map);
+    }, (err) => {
+      console.warn('Unread messages listener error:', err);
+    });
+
+    return () => {
+      unsubscribeProducts();
+      unsubscribeMessages();
+    };
   }, [currentUser]);
 
   const fetchDashboardData = async () => {
@@ -442,20 +466,39 @@ export const AdminDashboard: React.FC = () => {
         setDownloadProgress(`Fetching ${i + 1}/${fileList.length}...`);
         
         try {
-          const response = await fetch(fileInfo.url);
-          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-          const blob = await response.blob();
-          
-          let cleanName = fileInfo.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-          if (!cleanName.includes('.')) {
-            cleanName += '.jpg';
+          // 1. Check local high-speed cache / IndexedDB first
+          let blob: Blob | null = 
+            (await getStoredOriginalBlob(fileInfo.url)) || 
+            (await getStoredOriginalBlob(fileInfo.name));
+
+          // 2. If not found in cache, fetch from remote URL safely
+          if (!blob && fileInfo.url && (fileInfo.url.startsWith('http://') || fileInfo.url.startsWith('https://') || fileInfo.url.startsWith('blob:'))) {
+            try {
+              const response = await fetch(fileInfo.url);
+              if (response.ok) {
+                blob = await response.blob();
+              }
+            } catch (netErr) {
+              console.warn(`Fetch notice for file: ${fileInfo.url}`, netErr);
+            }
           }
-          zip.file(cleanName, blob);
-          succeededCount++;
+          
+          if (blob) {
+            let cleanName = fileInfo.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+            if (!cleanName.includes('.')) {
+              cleanName += '.jpg';
+            }
+            zip.file(cleanName, blob);
+            succeededCount++;
+          } else if (fileInfo.url && fileInfo.url.startsWith('http')) {
+            // Direct browser tab fallback
+            window.open(fileInfo.url, '_blank');
+          }
         } catch (err) {
-          console.error(`Failed to fetch file: ${fileInfo.url}`, err);
-          // If fetch fails (maybe CORS), download via window.open
-          window.open(fileInfo.url, '_blank');
+          console.warn(`Notice processing file for ZIP: ${fileInfo.url}`, err);
+          if (fileInfo.url && fileInfo.url.startsWith('http')) {
+            window.open(fileInfo.url, '_blank');
+          }
         }
       }
 
@@ -2189,22 +2232,30 @@ export const AdminDashboard: React.FC = () => {
                     <tbody className="divide-y divide-slate-850">
                       {orders.map((ord) => (
                         <tr key={ord.id} className="hover:bg-slate-850/30">
-                          <td className="py-3.5">
+                          <td className="py-3.5 max-w-[200px]">
                             <p className="font-bold text-white">{ord.customerName}</p>
                             <p className="text-slate-500 text-xxs font-mono">#{ord.id.slice(0, 8).toUpperCase()}</p>
+                            {ord.customerRemark ? (
+                              <div className="mt-1.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] text-amber-300 font-sans">
+                                <span className="font-bold uppercase text-[9px] text-amber-400 block font-mono">Requirement / Remark:</span>
+                                "{ord.customerRemark}"
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-600 mt-1 italic font-mono">No special requirement provided.</p>
+                            )}
                           </td>
                           <td className="py-3.5 text-slate-300">
                             <ul className="list-disc pl-3 text-xxs space-y-0.5 text-slate-400">
                               {ord.items.map((it, k) => <li key={k} className="line-clamp-1">{it.productTitle} (x{it.quantity})</li>)}
                             </ul>
                           </td>
-                          <td className="py-3.5 text-slate-300">
+                          <td className="py-3.5 text-slate-300 max-w-[220px]">
                             {((ord.uploadedFiles && ord.uploadedFiles.length > 0) || ord.uploadedFileUrl) && (
                               <button
                                 type="button"
                                 onClick={() => handleBulkDownload(ord.id, ord.customerName, ord.uploadedFiles || ord.uploadedFileUrl)}
                                 disabled={downloadingOrderId === ord.id}
-                                className="mb-2.5 w-full max-w-[150px] py-1.5 px-2 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-400 disabled:text-slate-500 disabled:bg-slate-800/30 border border-amber-500/15 disabled:border-slate-800 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all select-none cursor-pointer"
+                                className="mb-2 w-full py-1.5 px-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all select-none cursor-pointer"
                               >
                                 {downloadingOrderId === ord.id ? (
                                   <>
@@ -2213,37 +2264,80 @@ export const AdminDashboard: React.FC = () => {
                                   </>
                                 ) : (
                                   <>
-                                    <FolderArchive className="h-3 w-3 shrink-0" />
-                                    <span>Bulk Download ZIP</span>
+                                    <FolderArchive className="h-3.5 w-3.5 shrink-0" />
+                                    <span>Bulk Download All ZIP</span>
                                   </>
                                 )}
                               </button>
                             )}
 
                             {ord.uploadedFiles && ord.uploadedFiles.length > 0 ? (
-                              <div className="flex flex-col gap-1.5 max-h-24 overflow-y-auto">
-                                {ord.uploadedFiles.map((f, fIdx) => (
-                                  <a 
-                                    key={fIdx}
-                                    href={f.url} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="text-slate-400 hover:text-amber-400 hover:underline font-medium font-mono text-[10px] flex items-center gap-1 truncate max-w-[150px]"
-                                    title={f.name}
-                                  >
-                                    📄 {f.name}
-                                  </a>
-                                ))}
+                              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+                                {ord.uploadedFiles.map((f, fIdx) => {
+                                  const targetUrl = f.originalFileUrl || f.url || '';
+                                  const targetName = f.originalFileName || f.name || `Asset_${fIdx + 1}.jpg`;
+                                  const fSize = f.originalFileSize ? `${(f.originalFileSize / (1024 * 1024)).toFixed(2)} MB` : '';
+                                  const fType = f.originalFileType ? f.originalFileType.split('/')[1]?.toUpperCase() : 'FILE';
+
+                                  return (
+                                    <div key={fIdx} className="bg-slate-950 p-2 rounded-xl border border-slate-800 space-y-1">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="text-white font-mono text-[10px] font-bold truncate max-w-[120px]" title={targetName}>
+                                          📄 {targetName}
+                                        </span>
+                                        <span className="text-emerald-400 text-[9px] font-bold bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20 shrink-0">
+                                          Original ✓
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono">
+                                        <span>{fSize || 'Full Quality'}</span>
+                                        <span>{fType}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1 pt-1">
+                                        <a
+                                          href={targetUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex-1 py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold text-center transition-all"
+                                        >
+                                          Preview
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() => downloadOriginalFile(targetUrl, targetName)}
+                                          className="flex-1 py-1 px-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-[9px] font-bold flex items-center justify-center gap-1 transition-all"
+                                          title="Download full quality original file"
+                                        >
+                                          <Download className="h-3 w-3" />
+                                          <span>Download</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             ) : ord.uploadedFileUrl ? (
-                              <a 
-                                href={ord.uploadedFileUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="text-amber-400 hover:underline font-bold font-mono text-xxs flex items-center gap-1"
-                              >
-                                Download Link 📄
-                              </a>
+                              <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 space-y-1">
+                                <p className="text-white font-mono text-[10px] font-bold truncate">{ord.uploadedFileName || 'Original Photo'}</p>
+                                <div className="flex items-center gap-1 pt-1">
+                                  <a
+                                    href={ord.uploadedFileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold text-center"
+                                  >
+                                    Preview
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadOriginalFile(ord.uploadedFileUrl!, ord.uploadedFileName || 'original_photo.jpg')}
+                                    className="flex-1 py-1 px-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-[9px] font-bold flex items-center justify-center gap-1"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    <span>Download</span>
+                                  </button>
+                                </div>
+                              </div>
                             ) : (
                               <span className="text-slate-600 font-mono text-xxs">No upload provided</span>
                             )}
@@ -2266,13 +2360,15 @@ export const AdminDashboard: React.FC = () => {
                             </select>
                           </td>
                           <td className="py-3.5 text-right">
-                            <button
-                              onClick={() => { setSelectedDoc(ord); setSelectedType('order'); }}
-                              className="p-2 bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-850 rounded-xl transition-all"
-                              title="Invoice Certificate"
-                            >
-                              <FileText className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => { setSelectedDoc(ord); setSelectedType('order'); }}
+                                className="p-2 bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-850 rounded-xl transition-all"
+                                title="Invoice Certificate"
+                              >
+                                <FileText className="h-4 w-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -4128,6 +4224,18 @@ export const AdminDashboard: React.FC = () => {
           onClose={() => setSelectedDoc(null)}
           documentData={selectedDoc}
           type={selectedType}
+        />
+      )}
+
+      {/* ORDER MESSAGE MODAL */}
+      {selectedOrderForMessage && isMessageModalOpen && (
+        <OrderMessageModal
+          isOpen={isMessageModalOpen}
+          onClose={() => { setIsMessageModalOpen(false); setSelectedOrderForMessage(null); }}
+          order={selectedOrderForMessage}
+          currentSenderType="admin"
+          currentUserId={currentUser?.uid || 'admin'}
+          currentUserName="Shiv Studio Admin"
         />
       )}
 

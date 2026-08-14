@@ -261,6 +261,35 @@ export interface CouponValidationResult {
   applicableSubtotal: number;
 }
 
+export interface UploadedFileRecord {
+  originalFileUrl: string;
+  originalFileName: string;
+  originalFileType: string;
+  originalFileSize: number;
+  originalWidth?: number;
+  originalHeight?: number;
+  uploadedAt: string;
+  uploadedBy?: string;
+  thumbnailUrl?: string;
+  previewUrl?: string;
+  name?: string;
+  url?: string;
+}
+
+export interface OrderMessage {
+  id?: string;
+  conversationId: string;
+  orderId: string;
+  customerId: string;
+  customerName?: string;
+  senderId: string;
+  senderName: string;
+  senderType: 'admin' | 'customer';
+  message: string;
+  createdAt: string;
+  read: boolean;
+}
+
 export interface Order {
   id: string;
   customerId: string;
@@ -276,7 +305,8 @@ export interface Order {
   }[];
   uploadedFileUrl?: string;
   uploadedFileName?: string;
-  uploadedFiles?: { name: string; url: string }[];
+  uploadedFiles?: UploadedFileRecord[];
+  customerRemark?: string;
   address: string;
   subtotal: number;
   gst: number;

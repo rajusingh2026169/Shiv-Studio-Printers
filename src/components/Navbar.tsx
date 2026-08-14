@@ -67,7 +67,6 @@ export const Navbar: React.FC<NavbarProps> = ({ cartCount, wishlistCount }) => {
     { name: 'Wedding Cards', path: '/wedding-cards' },
     { name: 'Product Store', path: '/store' },
     { name: 'Gallery', path: '/gallery' },
-    { name: 'Offers', path: '/offers' },
     { name: 'Blog', path: '/blog' },
     { name: 'Contact', path: '/contact' }
   ];

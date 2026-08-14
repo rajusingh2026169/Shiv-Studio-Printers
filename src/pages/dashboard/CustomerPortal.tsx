@@ -3,7 +3,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebase';
 import { Order, Booking } from '../../types';
-import { User, ShoppingBag, Calendar, Eye, ShieldCheck, Mail, Phone, MapPin, LogOut } from 'lucide-react';
+import { User, ShoppingBag, Calendar, Eye, Mail, Phone, MapPin, LogOut } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
 
 export const CustomerPortal: React.FC = () => {
@@ -156,21 +156,29 @@ export const CustomerPortal: React.FC = () => {
                 <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
                   {orders.map((order) => (
                     <div key={order.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-850/60 flex justify-between items-center text-xs">
-                      <div>
+                      <div className="min-w-0 pr-2 space-y-1">
                         <span className="text-xxs text-slate-500 font-mono">#{order.id}</span>
-                        <h4 className="font-bold text-white mt-0.5 truncate max-w-[150px]">
+                        <h4 className="font-bold text-white truncate max-w-[200px]">
                           {order.items.map(i => i.productTitle).join(', ')}
                         </h4>
-                        <p className="text-xxs text-slate-400 mt-1">Paid: ₹{order.total.toLocaleString('en-IN')}</p>
-                        <p className="text-amber-500 font-semibold text-xxs mt-0.5 font-mono uppercase">{order.status}</p>
+                        <p className="text-xxs text-slate-400">Paid: ₹{order.total.toLocaleString('en-IN')}</p>
+                        <p className="text-amber-500 font-semibold text-xxs font-mono uppercase">{order.status}</p>
+                        {order.customerRemark && (
+                          <div className="mt-1 p-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] text-amber-300 font-sans">
+                            <span className="font-bold uppercase text-[9px] text-amber-400 block font-mono">Remark:</span>
+                            "{order.customerRemark}"
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center space-x-2 shrink-0">
                         <button
                           onClick={() => { setSelectedDoc(order); setSelectedType('order'); }}
-                          className="p-1.5 bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-800 rounded-lg"
+                          className="p-2 bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-800 rounded-xl flex items-center gap-1 font-bold text-xxs transition-all"
+                          title="View Invoice"
                         >
                           <Eye className="h-4 w-4" />
+                          <span>Invoice</span>
                         </button>
                       </div>
                     </div>

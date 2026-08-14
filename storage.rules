@@ -1,11 +1,32 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Public read and write access for media uploads
-    match /{allPaths=**} {
+    // Customer photo and file uploads for printing orders
+    match /customer_uploads/{allPaths=**} {
       allow read, write: if true;
+    }
+    
+    // Product images, banners, gallery, videos
+    match /product_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /banner_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /gallery/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /videos/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Default fallback
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }
-
-
