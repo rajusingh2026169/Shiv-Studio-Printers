@@ -29,8 +29,8 @@ import { InvoiceModal } from '../components/InvoiceModal';
 
 interface CartProps {
   cart: CartItem[];
-  onUpdateQuantity: (productId: string, quantity: number) => void;
-  onRemoveFromCart: (productId: string) => void;
+  onUpdateQuantity: (productId: string, quantity: number, variantId?: string) => void;
+  onRemoveFromCart: (productId: string, variantId?: string) => void;
   onClearCart: () => void;
   wishlist: ProductItem[];
   onRemoveFromWishlist: (product: ProductItem) => void;
@@ -68,6 +68,14 @@ export const Cart: React.FC<CartProps> = ({
     };
     fetchSettings();
   }, []);
+
+  // Helper to get unit price respecting variant selection
+  const getItemUnitPrice = (item: CartItem): number => {
+    if (item.selectedVariantPrice !== undefined) {
+      return item.selectedVariantPrice;
+    }
+    return item.product.discountPrice || item.product.price;
+  };
 
   // Address Details
   const [fullName, setFullName] = useState(userProfile?.fullName || '');
@@ -130,9 +138,9 @@ export const Cart: React.FC<CartProps> = ({
   const [paymentSuccessData, setPaymentSuccessData] = useState<Order | null>(null);
   const [isPaying, setIsPaying] = useState(false);
 
-  // Totals
+  // Totals calculated dynamically with variant unit prices
   const subtotal = cart.reduce((acc, item) => {
-    const price = item.product.discountPrice || item.product.price;
+    const price = getItemUnitPrice(item);
     return acc + price * item.quantity;
   }, 0);
 
@@ -140,7 +148,7 @@ export const Cart: React.FC<CartProps> = ({
   const shippingEnabledItems = cart.filter(item => item.product.enableShipping !== false);
   
   const shippingSubtotal = shippingEnabledItems.reduce((acc, item) => {
-    const price = item.product.discountPrice || item.product.price;
+    const price = getItemUnitPrice(item);
     return acc + price * item.quantity;
   }, 0);
 
@@ -176,12 +184,12 @@ export const Cart: React.FC<CartProps> = ({
     }
   }
 
-  // Dynamic Inclusive GST Calculation based on per-product configuration
+  // Dynamic Inclusive GST Calculation based on per-product configuration and variant prices
   const gst = cart.reduce((acc, item) => {
     const isGstEnabled = item.product.enableGst !== false;
     if (!isGstEnabled) return acc;
     
-    const price = item.product.discountPrice || item.product.price;
+    const price = getItemUnitPrice(item);
     const itemGstPercent = item.product.gstPercent !== undefined ? item.product.gstPercent : 18;
     const itemSubtotal = price * item.quantity;
     
@@ -194,12 +202,12 @@ export const Cart: React.FC<CartProps> = ({
   const discount = appliedCouponResult?.isValid ? (appliedCouponResult.calculatedDiscount || 0) : 0;
   const grandTotal = Math.max(0, subtotal + shipping - discount);
 
-  // Helper to map cart items for validation
+  // Helper to map cart items for validation with variant names and variant prices
   const getCartItemsForValidation = (): CartItemForValidation[] => {
     return cart.map(item => ({
-      productId: item.product.id,
-      productTitle: item.product.title,
-      price: item.product.discountPrice || item.product.price,
+      productId: item.productId || item.product.id,
+      productTitle: item.selectedVariantName ? `${item.product.title} (${item.selectedVariantName})` : item.product.title,
+      price: getItemUnitPrice(item),
       quantity: item.quantity,
       category: item.product.category,
       serviceCategory: item.product.category === 'Printing' ? 'Printing' : item.product.category === 'Photography' ? 'Photography' : undefined
@@ -426,6 +434,68 @@ export const Cart: React.FC<CartProps> = ({
 
       const primaryFileUrl = sanitizedUploadedFiles[0]?.originalFileUrl || sanitizedUploadedFiles[0]?.url || '';
 
+      // Secure Server-side Firestore Price Verification for Products & Variants
+      const verifiedOrderItems: {
+        productId: string;
+        productTitle: string;
+        variantId?: string;
+        variantName?: string;
+        variantPrice?: number;
+        price: number;
+        quantity: number;
+        image: string;
+      }[] = [];
+
+      let verifiedSubtotal = 0;
+
+      for (const item of cart) {
+        const prodId = item.productId || item.product.id;
+        let verifiedUnitPrice = getItemUnitPrice(item);
+        let verifiedVariantName = item.selectedVariantName;
+
+        try {
+          const prodSnap = await getDoc(doc(db, 'products', prodId));
+          if (prodSnap.exists()) {
+            const prodData = prodSnap.data() as ProductItem;
+            if (item.selectedVariantId && prodData.variants && prodData.variants.length > 0) {
+              const matchedVariant = prodData.variants.find(v => v.id === item.selectedVariantId);
+              if (matchedVariant) {
+                verifiedUnitPrice = matchedVariant.discountPrice || matchedVariant.price;
+                verifiedVariantName = matchedVariant.name;
+              }
+            } else if (prodData.discountPrice || prodData.price) {
+              verifiedUnitPrice = prodData.discountPrice || prodData.price;
+            }
+          }
+        } catch (verErr) {
+          console.warn('Notice: Firestore price verification fallback to client item price', verErr);
+        }
+
+        verifiedSubtotal += verifiedUnitPrice * item.quantity;
+        verifiedOrderItems.push({
+          productId: prodId,
+          productTitle: item.product.title,
+          variantId: item.selectedVariantId || undefined,
+          variantName: verifiedVariantName || undefined,
+          variantPrice: item.selectedVariantId ? verifiedUnitPrice : undefined,
+          price: verifiedUnitPrice,
+          quantity: item.quantity,
+          image: item.product.image?.startsWith('data:') ? '' : item.product.image
+        });
+      }
+
+      // Re-verify GST with verified subtotal
+      const verifiedGst = cart.reduce((acc, item) => {
+        const isGstEnabled = item.product.enableGst !== false;
+        if (!isGstEnabled) return acc;
+        const matchedVerified = verifiedOrderItems.find(v => v.productId === (item.productId || item.product.id) && (v.variantId || '') === (item.selectedVariantId || ''));
+        const price = matchedVerified ? matchedVerified.price : getItemUnitPrice(item);
+        const itemGstPercent = item.product.gstPercent !== undefined ? item.product.gstPercent : 18;
+        return acc + Math.round(price * item.quantity * (itemGstPercent / 100));
+      }, 0);
+
+      const verifiedGrandTotal = Math.max(0, verifiedSubtotal + shipping - discount);
+
       const orderData: Order = {
         id: orderId,
         customerId: currentUser?.uid || 'anonymous',
@@ -433,22 +503,16 @@ export const Cart: React.FC<CartProps> = ({
         customerPhone: phone,
         customerEmail: email,
         address,
-        items: cart.map((item) => ({
-          productId: item.product.id,
-          productTitle: item.product.title,
-          price: item.product.discountPrice || item.product.price,
-          image: item.product.image?.startsWith('data:') ? '' : item.product.image,
-          quantity: item.quantity
-        })),
+        items: verifiedOrderItems,
         uploadedFileName: sanitizedUploadedFiles.map(f => f.originalFileName || f.name).join(', ') || '',
         uploadedFileUrl: primaryFileUrl,
         uploadedFiles: sanitizedUploadedFiles,
         customerRemark: customerRemark.trim(),
-        subtotal,
-        gst,
+        subtotal: verifiedSubtotal,
+        gst: verifiedGst,
         gstEnabled: cart.some(item => item.product.enableGst !== false),
         gstPercentage: cart.reduce((max, item) => item.product.enableGst !== false ? Math.max(max, item.product.gstPercent ?? 18) : max, 0) || 18,
-        gstAmount: gst,
+        gstAmount: verifiedGst,
         shipping,
         discount,
         couponCode: appliedCouponResult?.coupon?.code || '',
@@ -456,10 +520,10 @@ export const Cart: React.FC<CartProps> = ({
         discountAmount: discount || 0,
         discountType: appliedCouponResult?.coupon?.discountType || 'PERCENTAGE',
         discountValue: appliedCouponResult?.coupon?.discountValue || 0,
-        originalPrice: subtotal,
-        finalPrice: grandTotal,
-        paymentAmount: grandTotal,
-        total: grandTotal,
+        originalPrice: verifiedSubtotal,
+        finalPrice: verifiedGrandTotal,
+        paymentAmount: verifiedGrandTotal,
+        total: verifiedGrandTotal,
         paymentMethod: selectedPaymentMethod === 'upi' ? 'UPI / QR' : 'Card / Net Banking',
         paymentStatus: 'Paid',
         paymentDate: new Date().toISOString(),
@@ -529,14 +593,17 @@ export const Cart: React.FC<CartProps> = ({
               {/* Cart items list */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden p-6 space-y-4 shadow-xl">
                 <h2 className="text-base font-bold text-white uppercase tracking-wide border-b border-slate-800 pb-3">
-                  Cart Items
+                  Cart Items ({cart.reduce((s, i) => s + i.quantity, 0)})
                 </h2>
                 
                 <div className="divide-y divide-slate-800">
                   {cart.map((item) => {
-                    const price = item.product.discountPrice || item.product.price;
+                    const price = getItemUnitPrice(item);
+                    const itemKey = item.id || `${item.productId || item.product.id}_${item.selectedVariantId || ''}`;
+                    const targetId = item.id || item.productId || item.product.id;
+
                     return (
-                      <div key={item.product.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 first:pt-0 last:pb-0">
+                      <div key={itemKey} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 first:pt-0 last:pb-0">
                         <div className="flex items-center space-x-4">
                           <img 
                             src={item.product.image} 
@@ -546,7 +613,14 @@ export const Cart: React.FC<CartProps> = ({
                           />
                           <div>
                             <h4 className="text-sm font-bold text-white line-clamp-1">{item.product.title}</h4>
-                            <p className="text-xxs text-slate-500 mt-0.5">{item.product.category}</p>
+                            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                              <span className="text-xxs text-slate-500">{item.product.category}</span>
+                              {item.selectedVariantName && (
+                                <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-xxs font-semibold">
+                                  Size: {item.selectedVariantName}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-amber-500 font-bold mt-1">₹{price.toLocaleString('en-IN')}</p>
                           </div>
                         </div>
@@ -555,14 +629,14 @@ export const Cart: React.FC<CartProps> = ({
                         <div className="flex items-center justify-between sm:justify-end gap-6">
                           <div className="flex items-center border border-slate-800 rounded-lg p-1 bg-slate-950">
                             <button
-                              onClick={() => onUpdateQuantity(item.product.id, Math.max(1, item.quantity - 1))}
+                              onClick={() => onUpdateQuantity(targetId, Math.max(1, item.quantity - 1), item.selectedVariantId)}
                               className="p-1 text-slate-400 hover:text-white"
                             >
                               <Minus className="h-3.5 w-3.5" />
                             </button>
                             <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
                             <button
-                              onClick={() => onUpdateQuantity(item.product.id, item.quantity + 1)}
+                              onClick={() => onUpdateQuantity(targetId, item.quantity + 1, item.selectedVariantId)}
                               className="p-1 text-slate-400 hover:text-white"
                             >
                               <Plus className="h-3.5 w-3.5" />
@@ -574,7 +648,7 @@ export const Cart: React.FC<CartProps> = ({
                           </p>
 
                           <button
-                            onClick={() => onRemoveFromCart(item.product.id)}
+                            onClick={() => onRemoveFromCart(targetId, item.selectedVariantId)}
                             className="p-2 text-slate-500 hover:text-rose-500 transition-colors"
                           >
                             <Trash2 className="h-4.5 w-4.5" />
@@ -713,7 +787,7 @@ export const Cart: React.FC<CartProps> = ({
                           ) : (
                             <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-300 text-xxs space-y-1">
                               <span className="font-bold uppercase text-rose-400 block font-mono flex items-center gap-1">
-                                ⚠ Firebase Storage Error:
+                                ⚠ Upload Notice:
                               </span>
                               <p className="break-words font-sans">{fileItem.errorMessage || 'Upload failed. Please check network connection or retry.'}</p>
                             </div>

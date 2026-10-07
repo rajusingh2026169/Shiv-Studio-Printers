@@ -147,7 +147,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, doc
 
     if (type === 'order' && order) {
       order.items.forEach((item) => {
-        doc.text(item.productTitle, 18, startY);
+        const itemDesc = item.variantName ? `${item.productTitle} (${item.variantName})` : item.productTitle;
+        doc.text(itemDesc, 18, startY);
         doc.text(item.quantity.toString(), 125, startY);
         doc.text(`Rs. ${item.price.toFixed(2)}`, 145, startY);
         doc.text(`Rs. ${(item.price * item.quantity).toFixed(2)}`, 175, startY);
@@ -462,7 +463,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, doc
                 {order ? (
                   order.items.map((item, index) => (
                     <tr key={index} className="border-b border-slate-900 hover:bg-slate-900/20">
-                      <td className="py-3 px-4 font-semibold text-white">{item.productTitle}</td>
+                      <td className="py-3 px-4 font-semibold text-white">
+                        <div>{item.productTitle}</div>
+                        {item.variantName && (
+                          <div className="text-[11px] font-normal text-amber-400 font-mono mt-0.5">
+                            Size/Variant: {item.variantName}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-center">{item.quantity}</td>
                       <td className="py-3 px-4 text-right">₹{item.price.toLocaleString('en-IN')}</td>
                       <td className="py-3 px-4 text-right text-white">₹{(item.price * item.quantity).toLocaleString('en-IN')}</td>

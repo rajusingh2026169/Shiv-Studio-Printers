@@ -64,6 +64,17 @@ export interface ProductImageItem {
   createdAt: string;
 }
 
+export interface ProductVariant {
+  id: string;
+  name: string;
+  sku?: string;
+  price: number;
+  discountPrice?: number;
+  stock: number;
+  image?: string;
+  status: 'Active' | 'Inactive';
+}
+
 export interface ProductItem {
   id: string;
   title: string;
@@ -101,6 +112,8 @@ export interface ProductItem {
   enableGst?: boolean;
   gstIncludedInPrice?: boolean;
   enableShipping?: boolean;
+  freeShipping?: boolean;
+  shippingCharge?: number;
   unit?: 'Piece' | 'Pack' | 'Box' | 'Set';
   trackInventory?: boolean;
   shortDescription?: string;
@@ -114,15 +127,8 @@ export interface ProductItem {
     powerSource?: string;
     customFields?: { key: string; value: string }[];
   };
-  variants?: {
-    id: string;
-    name: string;
-    sku: string;
-    price: number;
-    stock: number;
-    image: string;
-    status: 'Active' | 'Inactive';
-  }[];
+  enableVariants?: boolean;
+  variants?: ProductVariant[];
   customization?: {
     customerPhotoRequired?: boolean;
     customerNamePrinting?: boolean;
@@ -179,7 +185,11 @@ export interface WeddingCardItem {
 
 export interface CartItem {
   id: string;
+  productId: string;
   product: ProductItem;
+  selectedVariantId?: string;
+  selectedVariantName?: string;
+  selectedVariantPrice?: number;
   quantity: number;
 }
 
@@ -299,6 +309,9 @@ export interface Order {
   items: {
     productId: string;
     productTitle: string;
+    variantId?: string;
+    variantName?: string;
+    variantPrice?: number;
     price: number;
     quantity: number;
     image: string;

@@ -21,7 +21,7 @@ import { AdminDashboard } from './pages/dashboard/AdminDashboard';
 import { PhotographerPanel } from './pages/dashboard/PhotographerPanel';
 import { StaffPanel } from './pages/dashboard/StaffPanel';
 import { CustomerPortal } from './pages/dashboard/CustomerPortal';
-import { CartItem, ProductItem } from './types';
+import { CartItem, ProductItem, ProductVariant } from './types';
 import { seedDatabaseIfNeeded } from './firebase';
 
 // Role-based route guardian
@@ -55,7 +55,20 @@ const MainAppContent: React.FC = () => {
   useEffect(() => {
     const cachedCart = localStorage.getItem('shivstudio_cart');
     const cachedWishlist = localStorage.getItem('shivstudio_wishlist');
-    if (cachedCart) setCart(JSON.parse(cachedCart));
+    if (cachedCart) {
+      try {
+        const parsed = JSON.parse(cachedCart);
+        // Normalize cart items with id and productId
+        const normalized: CartItem[] = (Array.isArray(parsed) ? parsed : []).map(item => ({
+          ...item,
+          id: item.id || (item.selectedVariantId ? `${item.productId || item.product?.id}_${item.selectedVariantId}` : (item.productId || item.product?.id)),
+          productId: item.productId || item.product?.id
+        }));
+        setCart(normalized);
+      } catch (err) {
+        console.error('Error parsing cached cart:', err);
+      }
+    }
     if (cachedWishlist) setWishlist(JSON.parse(cachedWishlist));
     seedDatabaseIfNeeded();
   }, []);
@@ -70,24 +83,54 @@ const MainAppContent: React.FC = () => {
     localStorage.setItem('shivstudio_wishlist', JSON.stringify(newWishlist));
   };
 
-  const handleAddToCart = (product: ProductItem) => {
-    const existing = cart.find(item => item.productId === product.id);
-    if (existing) {
-      const updated = cart.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+  const handleAddToCart = (product: ProductItem, variant?: ProductVariant, quantity: number = 1) => {
+    const variantId = variant?.id;
+    const variantName = variant?.name;
+    const variantPrice = variant ? (variant.discountPrice || variant.price) : undefined;
+    const cartItemId = variantId ? `${product.id}_${variantId}` : product.id;
+
+    // Check if exact product + variant combination is already in cart
+    const existingIndex = cart.findIndex(item => 
+      (item.id === cartItemId) || 
+      (item.productId === product.id && (item.selectedVariantId || '') === (variantId || ''))
+    );
+
+    if (existingIndex > -1) {
+      const updated = [...cart];
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        quantity: updated[existingIndex].quantity + (quantity || 1)
+      };
       saveCart(updated);
     } else {
-      const updated = [...cart, { productId: product.id, product, quantity: 1 }];
-      saveCart(updated);
+      const newItem: CartItem = {
+        id: cartItemId,
+        productId: product.id,
+        product,
+        selectedVariantId: variantId,
+        selectedVariantName: variantName,
+        selectedVariantPrice: variantPrice,
+        quantity: quantity || 1
+      };
+      saveCart([...cart, newItem]);
     }
   };
 
-  const handleUpdateQuantity = (productId: string, quantity: number) => {
-    const updated = cart.map(item => item.productId === productId ? { ...item, quantity: Math.max(1, quantity) } : item);
+  const handleUpdateQuantity = (cartItemId: string, quantity: number, variantId?: string) => {
+    const updated = cart.map(item => {
+      const matches = item.id === cartItemId || 
+        (item.productId === cartItemId && (variantId === undefined || (item.selectedVariantId || '') === (variantId || '')));
+      return matches ? { ...item, quantity: Math.max(1, quantity) } : item;
+    });
     saveCart(updated);
   };
 
-  const handleRemoveFromCart = (productId: string) => {
-    const updated = cart.filter(item => item.productId !== productId);
+  const handleRemoveFromCart = (cartItemId: string, variantId?: string) => {
+    const updated = cart.filter(item => {
+      const matches = item.id === cartItemId || 
+        (item.productId === cartItemId && (variantId === undefined || (item.selectedVariantId || '') === (variantId || '')));
+      return !matches;
+    });
     saveCart(updated);
   };
 
@@ -111,8 +154,8 @@ const MainAppContent: React.FC = () => {
     saveWishlist(updated);
   };
 
-  const handleMoveToCart = (product: ProductItem) => {
-    handleAddToCart(product);
+  const handleMoveToCart = (product: ProductItem, variant?: ProductVariant) => {
+    handleAddToCart(product, variant);
     handleRemoveFromWishlist(product);
   };
 

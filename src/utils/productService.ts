@@ -139,8 +139,11 @@ export async function prepareCleanProductDoc(productData: Partial<ProductItem>, 
     trackInventory: productData.trackInventory !== false,
     shortDescription: productData.shortDescription || '',
     specifications: productData.specifications || {},
+    variants: Array.isArray(productData.variants) ? productData.variants : [],
+    enableVariants: productData.enableVariants !== undefined ? productData.enableVariants : (Array.isArray(productData.variants) && productData.variants.length > 0),
     customization: productData.customization || {},
     delivery: productData.delivery || {},
+    seo: productData.seo || {},
     labels: productData.labels || {}
   };
 

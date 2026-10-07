@@ -283,72 +283,95 @@ export const uploadOriginalClientPhoto = async (
   // Immediate start signal
   emitProgress(10, Math.round(originalFileSize * 0.1), 'Uploading...');
 
-  // Smooth dynamic progression ticker
-  let isDone = false;
-  const progressTimer = setInterval(() => {
-    if (isDone) return;
-    if (currentProgress < 95) {
-      const step = currentProgress < 40 ? 12 : currentProgress < 75 ? 8 : 3;
-      const nextPct = Math.min(95, currentProgress + step);
-      emitProgress(nextPct);
-    }
-  }, 90);
-
-  const getDirectBucketUrl = () => {
-    const bucketName = storage.app.options.storageBucket || 'shiv-studio-and-printers.firebasestorage.app';
-    const encodedPath = encodeURIComponent(storagePath);
-    return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media`;
-  };
-
   let downloadUrl = '';
 
-  // Attempt Firebase Storage Upload with smart protected timeout
+  // 1. Try high-speed server-side /api/upload endpoint with real live XMLHttpRequest progress
   try {
-    const storageRef = ref(storage, storagePath);
-    const safeFileName = originalFileName.replace(/[^\x00-\x7F]/g, '_');
-    const safeUploaderName = uploaderName.replace(/[^\x00-\x7F]/g, '_');
+    const uploadResult = await new Promise<{ url: string } | null>((resolve) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file, originalFileName);
 
-    const metadata = {
-      contentType,
-      customMetadata: {
-        originalFileName: safeFileName,
-        originalFileSize: String(originalFileSize),
-        uploadedBy: safeUploaderName,
-      }
-    };
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable && evt.total > 0) {
+          const pct = Math.min(99, Math.max(10, Math.round((evt.loaded / evt.total) * 100)));
+          emitProgress(pct, evt.loaded);
+        }
+      };
 
-    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      };
 
-    uploadTask.on('state_changed', (snap) => {
-      if (snap.totalBytes > 0) {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        emitProgress(pct, snap.bytesTransferred);
-      }
+      xhr.onerror = () => resolve(null);
+      xhr.ontimeout = () => resolve(null);
+      xhr.timeout = 60000; // 60s max for huge files
+
+      xhr.open('POST', '/api/upload');
+      xhr.send(formData);
     });
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('storage_network_timeout')), 180000)
-    );
+    if (uploadResult && uploadResult.url) {
+      downloadUrl = uploadResult.url;
+    }
+  } catch (apiErr) {
+    console.warn('[CUSTOMER PHOTO UPLOAD] Local /api/upload notice:', apiErr);
+  }
 
-    const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-    downloadUrl = await getDownloadURL(snapshot.ref);
-  } catch (err: any) {
-    console.warn('[CUSTOMER PHOTO UPLOAD] Cloud storage upload issue, using safe fallback:', err?.message || err);
-    // If cloud upload wasn't confirmed, use local blob URL to guarantee 0-error download
-    downloadUrl = localBlobUrl || getDirectBucketUrl();
-  } finally {
-    isDone = true;
-    clearInterval(progressTimer);
+  // 2. If /api/upload did not complete, attempt Firebase Storage with a strict 3-second timeout
+  if (!downloadUrl) {
+    try {
+      const storageRef = ref(storage, storagePath);
+      const safeFileName = originalFileName.replace(/[^\x00-\x7F]/g, '_');
+      const safeUploaderName = uploaderName.replace(/[^\x00-\x7F]/g, '_');
+
+      const metadata = {
+        contentType,
+        customMetadata: {
+          originalFileName: safeFileName,
+          originalFileSize: String(originalFileSize),
+          uploadedBy: safeUploaderName,
+        }
+      };
+
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+
+      uploadTask.on('state_changed', (snap) => {
+        if (snap.totalBytes > 0) {
+          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          emitProgress(pct, snap.bytesTransferred);
+        }
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('storage_fast_timeout')), 3000)
+      );
+
+      const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+      downloadUrl = await getDownloadURL(snapshot.ref);
+    } catch (err: any) {
+      console.warn('[CUSTOMER PHOTO UPLOAD] Cloud storage fallback triggered:', err?.message || err);
+      downloadUrl = localBlobUrl;
+    }
   }
 
   if (!downloadUrl) {
-    downloadUrl = getDirectBucketUrl();
+    downloadUrl = localBlobUrl;
   }
 
   // Register the downloadUrl to our local cache too
   await storeOriginalBlobLocally(downloadUrl, file);
 
-  // Emit 100%
+  // Emit 100% completion
   emitProgress(100, originalFileSize, 'Completed');
 
   const [dimensions, compactPreview] = await Promise.all([
@@ -371,7 +394,7 @@ export const uploadOriginalClientPhoto = async (
     url: downloadUrl,
   };
 
-  console.log('[CUSTOMER PHOTO UPLOAD] Successfully Processed:', record.originalFileName);
+  console.log('[CUSTOMER PHOTO UPLOAD] Successfully Processed:', record.originalFileName, 'URL:', downloadUrl);
   return record;
 };
 
@@ -401,21 +424,34 @@ export const downloadOriginalFile = async (urlOrPath: string, fileName: string) 
       return;
     }
 
-    // 2. Fetch remote URL
-    if (urlOrPath && (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://') || urlOrPath.startsWith('blob:'))) {
-      const response = await fetch(urlOrPath);
-      if (response.ok) {
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = cleanName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-        return;
+    // 2. Fetch remote URL or local uploads path
+    if (urlOrPath && (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://') || urlOrPath.startsWith('blob:') || urlOrPath.startsWith('/'))) {
+      try {
+        const response = await fetch(urlOrPath);
+        if (response.ok) {
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = cleanName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          return;
+        }
+      } catch (netErr) {
+        console.warn('Direct fetch failed, falling back to download link:', netErr);
       }
+
+      // Fallback direct download link
+      const link = document.createElement('a');
+      link.href = urlOrPath;
+      link.download = cleanName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
     }
 
     // 3. Fallback direct window open

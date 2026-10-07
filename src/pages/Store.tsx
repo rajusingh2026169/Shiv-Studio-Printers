@@ -2,15 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ProductItem, VideoItem } from '../types';
+import { ProductItem, ProductVariant, VideoItem } from '../types';
 import { getProductImages } from '../utils/productService';
 import { getVideosForCategory } from '../utils/videoService';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
-import { Star, Search, Filter, ShoppingCart, Heart, Eye, CheckCircle, Flame, Film, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { Star, Search, Filter, ShoppingCart, Heart, Eye, CheckCircle, Flame, Film, Image as ImageIcon, AlertCircle, Layers } from 'lucide-react';
 
 interface StoreProps {
-  onAddToCart: (product: ProductItem) => void;
+  onAddToCart: (product: ProductItem, variant?: ProductVariant, quantity?: number) => void;
   onToggleWishlist: (product: ProductItem) => void;
   wishlist: string[];
 }
@@ -20,12 +20,22 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeError, setStoreError] = useState<string | null>(null);
   const [settings, setSettings] = useState<any>({ studioName: 'Shiv Studio & Printers' });
 
   const handleSelectProduct = async (product: ProductItem) => {
     setSelectedProduct(product);
+    
+    // Auto-select first active variant if variants exist
+    if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+      const activeVars = product.variants.filter(v => v.status === 'Active');
+      setSelectedVariant(activeVars.length > 0 ? activeVars[0] : product.variants[0]);
+    } else {
+      setSelectedVariant(null);
+    }
+
     let galleryImgs = product.images || [];
     if (galleryImgs.length === 0) {
       galleryImgs = await getProductImages(product.id);
@@ -243,16 +253,34 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                 </div>
 
                 <div className="mt-6 pt-3 border-t border-slate-800/60">
-                  <div className="flex items-baseline space-x-2 mb-4">
-                    <span className="text-lg font-bold text-amber-400">
-                      ₹{(product.discountPrice || product.price).toLocaleString('en-IN')}
-                    </span>
-                    {product.discountPrice && (
-                      <span className="text-xs text-slate-500 line-through">
-                        ₹{product.price.toLocaleString('en-IN')}
-                      </span>
-                    )}
-                  </div>
+                  {(() => {
+                    const activeVariants = (product.variants || []).filter(v => v.status === 'Active');
+                    const hasVars = activeVariants.length > 0;
+                    const minPrice = hasVars ? Math.min(...activeVariants.map(v => v.discountPrice || v.price)) : (product.discountPrice || product.price);
+                    const maxPrice = hasVars ? Math.max(...activeVariants.map(v => v.discountPrice || v.price)) : (product.discountPrice || product.price);
+
+                    return (
+                      <div className="space-y-1 mb-4">
+                        <div className="flex items-baseline space-x-2">
+                          <span className="text-lg font-bold text-amber-400">
+                            {hasVars && minPrice !== maxPrice
+                              ? `₹${minPrice.toLocaleString('en-IN')} - ₹${maxPrice.toLocaleString('en-IN')}`
+                              : `₹${minPrice.toLocaleString('en-IN')}`}
+                          </span>
+                          {!hasVars && product.discountPrice && (
+                            <span className="text-xs text-slate-500 line-through">
+                              ₹{product.price.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </div>
+                        {hasVars && (
+                          <span className="inline-block text-xxs font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                            {activeVariants.length} Sizes / Options
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -260,14 +288,21 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                       className="py-2.5 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold text-xs rounded-xl transition-colors flex items-center justify-center space-x-1"
                     >
                       <Eye className="h-3.5 w-3.5" />
-                      <span>Specs</span>
+                      <span>{product.variants && product.variants.filter(v => v.status === 'Active').length > 0 ? 'Options' : 'Specs'}</span>
                     </button>
                     <button
-                      onClick={() => onAddToCart(product)}
+                      onClick={() => {
+                        const activeVars = (product.variants || []).filter(v => v.status === 'Active');
+                        if (activeVars.length > 0) {
+                          handleSelectProduct(product);
+                        } else {
+                          onAddToCart(product);
+                        }
+                      }}
                       className="py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg shadow-amber-500/5 flex items-center justify-center space-x-1"
                     >
                       <ShoppingCart className="h-3.5 w-3.5" />
-                      <span>Add to Cart</span>
+                      <span>{product.variants && product.variants.filter(v => v.status === 'Active').length > 0 ? 'Choose Size' : 'Add to Cart'}</span>
                     </button>
                   </div>
                 </div>
@@ -278,140 +313,236 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
       </div>
 
       {/* Product Detail Modal */}
-      {selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
-          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 text-white max-h-[90vh] overflow-y-auto">
-            <button 
-              onClick={() => setSelectedProduct(null)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              ✕
-            </button>
+      {selectedProduct && (() => {
+        const activeVariants = (selectedProduct.variants || []).filter(v => v.status === 'Active');
+        const hasVariants = activeVariants.length > 0;
+        const currentPrice = selectedVariant 
+          ? (selectedVariant.discountPrice || selectedVariant.price) 
+          : (selectedProduct.discountPrice || selectedProduct.price);
+        const originalPrice = selectedVariant 
+          ? selectedVariant.price 
+          : selectedProduct.price;
+        const hasDiscount = selectedVariant 
+          ? (selectedVariant.discountPrice !== undefined && selectedVariant.discountPrice < selectedVariant.price) 
+          : (selectedProduct.discountPrice !== undefined && selectedProduct.discountPrice < selectedProduct.price);
+        const currentStock = selectedVariant ? selectedVariant.stock : selectedProduct.stock;
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              {/* Media side (Images & Videos) */}
-              <div className="space-y-4">
-                {/* Main cover image */}
-                <div className="aspect-square rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
-                  <img 
-                    src={selectedProduct.image || selectedProduct.thumbnailUrl} 
-                    alt={selectedProduct.title} 
-                    className="w-full h-full object-cover" 
-                    referrerPolicy="no-referrer"
-                    loading="lazy"
-                  />
-                </div>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
+            <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 text-white max-h-[90vh] overflow-y-auto">
+              <button 
+                onClick={() => setSelectedProduct(null)}
+                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
 
-                {/* Multiple Images Gallery */}
-                {selectedProduct.images && selectedProduct.images.length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="text-xxs font-bold text-amber-400 font-mono flex items-center space-x-1">
-                      <ImageIcon className="h-3 w-3" />
-                      <span>Product Photos ({selectedProduct.images.length})</span>
-                    </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {selectedProduct.images.map((img, i) => (
-                        <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
-                          <img 
-                            src={img} 
-                            alt={`Product view ${i + 1}`} 
-                            className="w-full h-full object-cover" 
-                            referrerPolicy="no-referrer"
-                            loading="lazy"
-                          />
-                        </div>
-                      ))}
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Media side (Images & Videos) */}
+                <div className="space-y-4">
+                  {/* Main cover image */}
+                  <div className="aspect-square rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+                    <img 
+                      src={(selectedVariant?.image) || selectedProduct.image || selectedProduct.thumbnailUrl} 
+                      alt={selectedProduct.title} 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                    />
                   </div>
-                )}
 
-                {/* Multiple Videos Section */}
-                {selectedProduct.videos && selectedProduct.videos.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800">
-                    <p className="text-xxs font-bold text-amber-400 font-mono flex items-center space-x-1">
-                      <Film className="h-3 w-3" />
-                      <span>Product Demo Videos ({selectedProduct.videos.length})</span>
-                    </p>
-                    <div className="space-y-3">
-                      {selectedProduct.videos.map((vid) => (
-                        <div key={vid.id} className="space-y-1">
-                          <VideoPlayer
-                            src={vid.videoUrl}
-                            poster={vid.thumbnailUrl}
-                            title={vid.title}
-                            description={vid.description}
-                          />
-                        </div>
-                      ))}
+                  {/* Multiple Images Gallery */}
+                  {selectedProduct.images && selectedProduct.images.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xxs font-bold text-amber-400 font-mono flex items-center space-x-1">
+                        <ImageIcon className="h-3 w-3" />
+                        <span>Product Photos ({selectedProduct.images.length})</span>
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {selectedProduct.images.map((img, i) => (
+                          <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
+                            <img 
+                              src={img} 
+                              alt={`Product view ${i + 1}`} 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                              loading="lazy"
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
 
-              {/* Data side */}
-              <div className="space-y-4">
-                <span className="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold font-mono text-xxs uppercase tracking-wider">
-                  {selectedProduct.category} Catalog
-                </span>
-
-                <h2 className="text-lg sm:text-xl font-bold leading-tight">{selectedProduct.title}</h2>
-                
-                <div className="flex items-center space-x-2 text-sm text-amber-400">
-                  <Star className="h-4 w-4 fill-current" />
-                  <span className="font-bold text-white">{selectedProduct.rating}</span>
-                  <span className="text-slate-500">|</span>
-                  <span className="text-slate-400">{selectedProduct.reviewsCount} customer ratings</span>
-                </div>
-
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-2xl font-extrabold text-amber-400">
-                    ₹{(selectedProduct.discountPrice || selectedProduct.price).toLocaleString('en-IN')}
-                  </span>
-                  {selectedProduct.discountPrice && (
-                    <span className="text-sm text-slate-500 line-through">
-                      ₹{selectedProduct.price.toLocaleString('en-IN')}
-                    </span>
+                  {/* Multiple Videos Section */}
+                  {selectedProduct.videos && selectedProduct.videos.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800">
+                      <p className="text-xxs font-bold text-amber-400 font-mono flex items-center space-x-1">
+                        <Film className="h-3 w-3" />
+                        <span>Product Demo Videos ({selectedProduct.videos.length})</span>
+                      </p>
+                      <div className="space-y-3">
+                        {selectedProduct.videos.map((vid) => (
+                          <div key={vid.id} className="space-y-1">
+                            <VideoPlayer
+                              src={vid.videoUrl}
+                              poster={vid.thumbnailUrl}
+                              title={vid.title}
+                              description={vid.description}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                <p className="text-xs text-slate-400 leading-relaxed">{selectedProduct.description}</p>
-
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-850/50 text-xxs space-y-1.5 font-sans">
-                  <p className="flex justify-between">
-                    <span className="text-slate-500">Dispatched Location:</span>
-                    <span className="text-slate-300">{settings.studioName || 'Shiv Studio'} / All India</span>
-                  </p>
-                  <p className="flex justify-between">
-                    <span className="text-slate-500">Customization File Required:</span>
-                    <span className="text-amber-500 font-semibold">Yes (during checkout)</span>
-                  </p>
-                  <p className="flex justify-between">
-                    <span className="text-slate-500">Stock Availability:</span>
-                    <span className={`${selectedProduct.stock > 10 ? 'text-emerald-400' : 'text-rose-400'} font-semibold`}>
-                      {selectedProduct.stock > 10 ? 'In Stock' : `Only ${selectedProduct.stock} left!`}
+                {/* Data side */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold font-mono text-xxs uppercase tracking-wider">
+                      {selectedProduct.category} Catalog
                     </span>
-                  </p>
-                </div>
+                    {hasVariants && (
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-xxs">
+                        {activeVariants.length} Sizes
+                      </span>
+                    )}
+                  </div>
 
-                <div className="pt-4 border-t border-slate-800 flex space-x-3">
-                  <button
-                    onClick={() => { onAddToCart(selectedProduct); setSelectedProduct(null); }}
-                    className="flex-1 py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-colors"
-                  >
-                    Add to Cart
-                  </button>
-                  <button
-                    onClick={() => { onToggleWishlist(selectedProduct); }}
-                    className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl border border-slate-700"
-                  >
-                    <Heart className={`h-4.5 w-4.5 ${isProductInWishlist(selectedProduct.id) ? 'text-rose-500 fill-current' : ''}`} />
-                  </button>
+                  <h2 className="text-lg sm:text-xl font-bold leading-tight">{selectedProduct.title}</h2>
+                  
+                  <div className="flex items-center space-x-2 text-sm text-amber-400">
+                    <Star className="h-4 w-4 fill-current" />
+                    <span className="font-bold text-white">{selectedProduct.rating}</span>
+                    <span className="text-slate-500">|</span>
+                    <span className="text-slate-400">{selectedProduct.reviewsCount} customer ratings</span>
+                  </div>
+
+                  {/* Dynamic Pricing Box */}
+                  <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex items-baseline justify-between">
+                    <div>
+                      <span className="text-2xl font-extrabold text-amber-400">
+                        ₹{currentPrice.toLocaleString('en-IN')}
+                      </span>
+                      {hasDiscount && (
+                        <span className="ml-2 text-sm text-slate-500 line-through">
+                          ₹{originalPrice.toLocaleString('en-IN')}
+                        </span>
+                      )}
+                      {selectedVariant && (
+                        <p className="text-xxs text-slate-400 mt-0.5 font-mono">
+                          Price for size: <span className="text-amber-400 font-bold">{selectedVariant.name}</span>
+                        </p>
+                      )}
+                    </div>
+                    {hasDiscount && (
+                      <span className="bg-rose-600/90 text-white font-extrabold text-xxs px-2 py-1 rounded">
+                        SAVE ₹{(originalPrice - currentPrice).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Dynamic Variant Selector */}
+                  {hasVariants && (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                          <Layers className="h-3.5 w-3.5 text-amber-400" />
+                          <span>Select Size / Option:</span>
+                        </label>
+                        {selectedVariant && (
+                          <span className="text-xxs font-mono text-amber-400 font-semibold">
+                            {selectedVariant.name}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {activeVariants.map((variant) => {
+                          const isSelected = selectedVariant?.id === variant.id;
+                          const variantPrice = variant.discountPrice || variant.price;
+                          const isOutOfStock = variant.stock <= 0;
+
+                          return (
+                            <button
+                              key={variant.id}
+                              type="button"
+                              onClick={() => setSelectedVariant(variant)}
+                              className={`p-2.5 rounded-xl border text-left transition-all ${
+                                isSelected
+                                  ? 'border-amber-400 bg-amber-400/10 text-white ring-1 ring-amber-400 shadow-md shadow-amber-500/10'
+                                  : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
+                              } ${isOutOfStock ? 'opacity-50' : ''}`}
+                            >
+                              <p className="text-xs font-bold truncate">{variant.name}</p>
+                              <div className="flex items-center justify-between mt-1">
+                                <span className="text-xs font-extrabold text-amber-400">
+                                  ₹{variantPrice.toLocaleString('en-IN')}
+                                </span>
+                                {isOutOfStock ? (
+                                  <span className="text-xxs text-rose-400 font-medium">Out of Stock</span>
+                                ) : variant.stock < 5 ? (
+                                  <span className="text-xxs text-amber-500 font-mono">{variant.stock} left</span>
+                                ) : null}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-slate-400 leading-relaxed">{selectedProduct.description}</p>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-850/50 text-xxs space-y-1.5 font-sans">
+                    <p className="flex justify-between">
+                      <span className="text-slate-500">Dispatched Location:</span>
+                      <span className="text-slate-300">{settings.studioName || 'Shiv Studio'} / All India</span>
+                    </p>
+                    <p className="flex justify-between">
+                      <span className="text-slate-500">Customization File Required:</span>
+                      <span className="text-amber-500 font-semibold">Yes (during checkout)</span>
+                    </p>
+                    <p className="flex justify-between">
+                      <span className="text-slate-500">Stock Availability:</span>
+                      <span className={`${currentStock > 10 ? 'text-emerald-400' : currentStock > 0 ? 'text-amber-400' : 'text-rose-400'} font-semibold`}>
+                        {currentStock > 10 ? 'In Stock' : currentStock > 0 ? `Only ${currentStock} left!` : 'Out of Stock'}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 flex space-x-3">
+                    <button
+                      disabled={currentStock <= 0}
+                      onClick={() => { 
+                        onAddToCart(selectedProduct, selectedVariant || undefined, 1); 
+                        setSelectedProduct(null); 
+                      }}
+                      className="flex-1 py-3 bg-amber-400 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-xl transition-colors flex items-center justify-center space-x-1.5"
+                    >
+                      <ShoppingCart className="h-4 w-4" />
+                      <span>
+                        {currentStock <= 0 
+                          ? 'Out of Stock' 
+                          : selectedVariant 
+                          ? `Add to Cart • ₹${currentPrice.toLocaleString('en-IN')}` 
+                          : 'Add to Cart'}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => { onToggleWishlist(selectedProduct); }}
+                      className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl border border-slate-700"
+                    >
+                      <Heart className={`h-4.5 w-4.5 ${isProductInWishlist(selectedProduct.id) ? 'text-rose-500 fill-current' : ''}`} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

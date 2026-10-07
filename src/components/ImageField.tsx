@@ -217,29 +217,49 @@ export const ImageField: React.FC<ImageFieldProps> = ({
 
       let downloadUrl = '';
 
+      // Try fast server /api/upload endpoint first
       try {
-        const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
-
-        // 1. 'state_changed' observer tracks progress
-        uploadTask.on('state_changed', (snapshot) => {
-          const progress = snapshot.totalBytes > 0 
-            ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
-            : 0;
-          setUploadProgress(progress);
+        const formData = new FormData();
+        formData.append('file', compressedFile, compressedFile.name);
+        const resp = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
         });
+        if (resp.ok) {
+          const apiData = await resp.json();
+          if (apiData && apiData.url) {
+            downloadUrl = apiData.url;
+          }
+        }
+      } catch (err) {
+        console.warn('Local /api/upload fallback in ImageField:', err);
+      }
 
-        // 2. Task completion with 6s timeout
-        const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Storage timeout')), 6000));
-        const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-        downloadUrl = await getDownloadURL(snapshot.ref);
-      } catch (uploadErr) {
-        console.warn('Storage upload fallback to optimized WebP data URL:', uploadErr);
-        const reader = new FileReader();
-        downloadUrl = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(compressedFile);
-        });
+      if (!downloadUrl) {
+        try {
+          const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
+
+          // 1. 'state_changed' observer tracks progress
+          uploadTask.on('state_changed', (snapshot) => {
+            const progress = snapshot.totalBytes > 0 
+              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
+              : 0;
+            setUploadProgress(progress);
+          });
+
+          // 2. Task completion with 2s timeout
+          const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Storage timeout')), 2000));
+          const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+          downloadUrl = await getDownloadURL(snapshot.ref);
+        } catch (uploadErr) {
+          console.warn('Storage upload fallback to optimized WebP data URL:', uploadErr);
+          const reader = new FileReader();
+          downloadUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(compressedFile);
+          });
+        }
       }
 
       if (downloadUrl) {

@@ -31,9 +31,29 @@ export async function uploadBase64ToStorage(
     return '';
   }
 
-  // If it's already an http/https URL, return as is
+  // If it's already an http/https URL or relative uploads URL, return as is
   if (!base64String.startsWith('data:')) {
     return base64String;
+  }
+
+  // 1. Try ultra-fast server /api/upload-base64 endpoint
+  try {
+    const response = await fetch('/api/upload-base64', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dataUrl: base64String,
+        fileName: `${folder}_${Date.now()}.webp`
+      })
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.url) {
+        return data.url;
+      }
+    }
+  } catch (apiErr) {
+    console.warn('API upload-base64 fallback:', apiErr);
   }
 
   try {

@@ -471,8 +471,8 @@ export const AdminDashboard: React.FC = () => {
             (await getStoredOriginalBlob(fileInfo.url)) || 
             (await getStoredOriginalBlob(fileInfo.name));
 
-          // 2. If not found in cache, fetch from remote URL safely
-          if (!blob && fileInfo.url && (fileInfo.url.startsWith('http://') || fileInfo.url.startsWith('https://') || fileInfo.url.startsWith('blob:'))) {
+          // 2. If not found in cache, fetch from remote URL or local uploads safely
+          if (!blob && fileInfo.url && (fileInfo.url.startsWith('http://') || fileInfo.url.startsWith('https://') || fileInfo.url.startsWith('blob:') || fileInfo.url.startsWith('/'))) {
             try {
               const response = await fetch(fileInfo.url);
               if (response.ok) {
@@ -641,6 +641,7 @@ export const AdminDashboard: React.FC = () => {
           customFields: pCustomSpecs
         },
         variants: pVariants,
+        enableVariants: (pVariants && pVariants.length > 0),
         customization: {
           customerPhotoRequired: pCustPhotoRequired,
           customerNamePrinting: pCustNamePrinting,
@@ -3276,7 +3277,25 @@ export const AdminDashboard: React.FC = () => {
 
                   {/* Add Variant Form Row */}
                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-850/60 space-y-3">
-                    <span className="text-xxs font-bold text-slate-300 font-mono block">Add New Custom Variant</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xxs font-bold text-slate-300 font-mono block">Add New Size / Custom Variant</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] text-slate-500 font-mono">Quick Sizes:</span>
+                        {['6x8 inch', '8x10 inch', '10x12 inch', '12x18 inch', '16x20 inch', '20x24 inch', '20x30 inch'].map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => {
+                              const nameEl = document.getElementById('var_name') as HTMLInputElement;
+                              if (nameEl) nameEl.value = sz;
+                            }}
+                            className="px-2 py-0.5 bg-slate-900 hover:bg-slate-800 text-amber-400 hover:text-amber-300 rounded border border-slate-800 text-[10px] font-mono transition-colors"
+                          >
+                            {sz}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                       <input 
                         type="text" 
