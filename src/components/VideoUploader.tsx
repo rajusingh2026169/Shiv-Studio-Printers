@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { auth } from '../firebase';
-import { signInAnonymously } from 'firebase/auth';
 import { UploadTask } from 'firebase/storage';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 import { 
   Upload, 
   Film, 
@@ -190,15 +190,6 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
       return;
     }
 
-    // Ensure Firebase Authentication
-    if (!auth.currentUser) {
-      try {
-        await signInAnonymously(auth);
-      } catch (authErr: any) {
-        console.warn('Anonymous auth signin notice:', authErr);
-      }
-    }
-
     setIsUploading(true);
     setIsPaused(false);
     setProgressPct(0);
@@ -256,17 +247,17 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             finalThumbnailStorageUrl = await uploadThumbnailResumable(autoBlob, selectedCategory);
           } catch (e) {
             console.warn('Auto thumbnail generation notice:', e);
-            finalThumbnailStorageUrl = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+            finalThumbnailStorageUrl = STUDIO_IMAGES.cinematicDrone;
           }
         } else if (tempPreviewVideoUrl) {
           try {
             const autoBlob = await generateVideoThumbnailBlob(tempPreviewVideoUrl, 1.0);
             finalThumbnailStorageUrl = await uploadThumbnailResumable(autoBlob, selectedCategory);
           } catch (e) {
-            finalThumbnailStorageUrl = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+            finalThumbnailStorageUrl = STUDIO_IMAGES.cinematicDrone;
           }
         } else {
-          finalThumbnailStorageUrl = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+          finalThumbnailStorageUrl = STUDIO_IMAGES.cinematicDrone;
         }
       }
 
@@ -278,7 +269,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
 
       // Final strict check
       if (finalThumbnailStorageUrl.startsWith('data:') || finalThumbnailStorageUrl.length > 2000) {
-        finalThumbnailStorageUrl = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+        finalThumbnailStorageUrl = STUDIO_IMAGES.cinematicDrone;
       }
 
       // -------------------------------------------------------------

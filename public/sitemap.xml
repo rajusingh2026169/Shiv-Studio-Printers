@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://shiv-studio.vercel.app/</loc><priority>1.0</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/about</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/wedding-photography</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/pre-wedding-photography</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/birthday-photography</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/engagement-photography</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/maternity-baby-photography</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/event-photography</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/cinematic-videography</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/drone-photography</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/album-designing</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/graphic-designing</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/services/video-editing</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/packages</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/gallery</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/store</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/wedding-cards</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/booking</loc><priority>0.9</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/contact</loc><priority>0.8</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/privacy-policy</loc><priority>0.4</priority></url>
+  <url><loc>https://shiv-studio.vercel.app/terms-conditions</loc><priority>0.4</priority></url>
+</urlset>

@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import { Order, Booking } from '../types';
-import { Search, FileText, CalendarDays, ClipboardCheck, Eye, Truck, Printer, Sparkles } from 'lucide-react';
+import { SEOHead } from '../components/SEOHead';
+import { Search, CalendarDays, Eye, Printer, Lock } from 'lucide-react';
 import { InvoiceModal } from '../components/InvoiceModal';
 
 export const TrackOrder: React.FC = () => {
+  const { currentUser, isAdmin } = useAuth();
   const [trackInput, setTrackInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [orderResults, setOrderResults] = useState<Order[]>([]);
   const [bookingResults, setBookingResults] = useState<Booking[]>([]);
   const [searched, setSearched] = useState(false);
+  const [authNotice, setAuthNotice] = useState(false);
 
   // Selected document to view Tax Invoice
   const [selectedDoc, setSelectedDoc] = useState<Order | Booking | null>(null);
@@ -23,64 +28,108 @@ export const TrackOrder: React.FC = () => {
 
     setLoading(true);
     setSearched(true);
+    setAuthNotice(false);
     setOrderResults([]);
     setBookingResults([]);
 
+    if (!currentUser) {
+      setAuthNotice(true);
+      setLoading(false);
+      return;
+    }
+
     try {
+      const adminUser = isAdmin();
+
       // 1. Check if queryTerm matches a single direct document ID
-      if (queryTerm.startsWith('LM-') || queryTerm.length >= 8) {
-        const orderDocRef = doc(db, 'orders', queryTerm);
-        const orderSnap = await getDoc(orderDocRef);
-        if (orderSnap.exists()) {
-          setOrderResults([orderSnap.data() as Order]);
-          setLoading(false);
-          return;
+      if (queryTerm.startsWith('LM-') || queryTerm.startsWith('ORD-') || queryTerm.startsWith('BK-') || queryTerm.length >= 8) {
+        try {
+          const orderDocRef = doc(db, 'orders', queryTerm);
+          const orderSnap = await getDoc(orderDocRef);
+          if (orderSnap.exists()) {
+            const ord = { id: orderSnap.id, ...orderSnap.data() } as Order;
+            if (adminUser || ord.customerId === currentUser.uid) {
+              setOrderResults([ord]);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch {
+          // Try booking next or scoped list
         }
 
-        const bookingDocRef = doc(db, 'bookings', queryTerm);
-        const bookingSnap = await getDoc(bookingDocRef);
-        if (bookingSnap.exists()) {
-          setBookingResults([bookingSnap.data() as Booking]);
-          setLoading(false);
-          return;
+        try {
+          const bookingDocRef = doc(db, 'bookings', queryTerm);
+          const bookingSnap = await getDoc(bookingDocRef);
+          if (bookingSnap.exists()) {
+            const bk = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
+            if (adminUser || bk.customerId === currentUser.uid) {
+              setBookingResults([bk]);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch {
+          // Continue to scoped list
         }
       }
 
-      // 2. Fallback: Search orders and bookings collections by customer Phone or Email
-      const ordersRef = collection(db, 'orders');
-      const ordersQueryPhone = query(ordersRef, where('customerPhone', '==', queryTerm));
-      const ordersSnapPhone = await getDocs(ordersQueryPhone);
-      
-      const ordersQueryEmail = query(ordersRef, where('customerEmail', '==', queryTerm));
-      const ordersSnapEmail = await getDocs(ordersQueryEmail);
+      // 2. Scoped query: Admin queries across Phone/Email; Customer queries own customerId
+      const qLower = queryTerm.toLowerCase();
+      if (adminUser) {
+        const ordersRef = collection(db, 'orders');
+        const [ordersSnapPhone, ordersSnapEmail] = await Promise.all([
+          getDocs(query(ordersRef, where('customerPhone', '==', queryTerm))),
+          getDocs(query(ordersRef, where('customerEmail', '==', queryTerm)))
+        ]);
+        const ordersList: Order[] = [];
+        ordersSnapPhone.forEach((d) => ordersList.push({ id: d.id, ...d.data() } as Order));
+        ordersSnapEmail.forEach((d) => {
+          if (!ordersList.some((o) => o.id === d.id)) {
+            ordersList.push({ id: d.id, ...d.data() } as Order);
+          }
+        });
+        setOrderResults(ordersList);
 
-      const ordersList: Order[] = [];
-      ordersSnapPhone.forEach((doc) => ordersList.push({ id: doc.id, ...doc.data() } as Order));
-      ordersSnapEmail.forEach((doc) => {
-        if (!ordersList.some(o => o.id === doc.id)) {
-          ordersList.push({ id: doc.id, ...doc.data() } as Order);
-        }
-      });
+        const bookingsRef = collection(db, 'bookings');
+        const [bookingsSnapPhone, bookingsSnapEmail] = await Promise.all([
+          getDocs(query(bookingsRef, where('customerPhone', '==', queryTerm))),
+          getDocs(query(bookingsRef, where('customerEmail', '==', queryTerm)))
+        ]);
+        const bookingsList: Booking[] = [];
+        bookingsSnapPhone.forEach((d) => bookingsList.push({ id: d.id, ...d.data() } as Booking));
+        bookingsSnapEmail.forEach((d) => {
+          if (!bookingsList.some((b) => b.id === d.id)) {
+            bookingsList.push({ id: d.id, ...d.data() } as Booking);
+          }
+        });
+        setBookingResults(bookingsList);
+      } else {
+        const [myOrdersSnap, myBookingsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'orders'), where('customerId', '==', currentUser.uid))),
+          getDocs(query(collection(db, 'bookings'), where('customerId', '==', currentUser.uid)))
+        ]);
 
-      setOrderResults(ordersList);
+        const matchingOrders = myOrdersSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Order))
+          .filter(
+            (o) =>
+              o.id.toLowerCase() === qLower ||
+              (o.customerPhone || '').toLowerCase() === qLower ||
+              (o.customerEmail || '').toLowerCase() === qLower
+          );
+        const matchingBookings = myBookingsSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Booking))
+          .filter(
+            (b) =>
+              b.id.toLowerCase() === qLower ||
+              (b.customerPhone || '').toLowerCase() === qLower ||
+              (b.customerEmail || '').toLowerCase() === qLower
+          );
 
-      const bookingsRef = collection(db, 'bookings');
-      const bookingsQueryPhone = query(bookingsRef, where('customerPhone', '==', queryTerm));
-      const bookingsSnapPhone = await getDocs(bookingsQueryPhone);
-
-      const bookingsQueryEmail = query(bookingsRef, where('customerEmail', '==', queryTerm));
-      const bookingsSnapEmail = await getDocs(bookingsQueryEmail);
-
-      const bookingsList: Booking[] = [];
-      bookingsSnapPhone.forEach((doc) => bookingsList.push({ id: doc.id, ...doc.data() } as Booking));
-      bookingsSnapEmail.forEach((doc) => {
-        if (!bookingsList.some(b => b.id === doc.id)) {
-          bookingsList.push({ id: doc.id, ...doc.data() } as Booking);
-        }
-      });
-
-      setBookingResults(bookingsList);
-
+        setOrderResults(matchingOrders);
+        setBookingResults(matchingBookings);
+      }
     } catch (err) {
       console.error('Error tracking query:', err);
     } finally {
@@ -93,19 +142,23 @@ export const TrackOrder: React.FC = () => {
   const getStepIndex = (status: Order['status']) => orderSteps.indexOf(status);
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-[#111111] min-h-screen text-white py-16 px-4 sm:px-6 lg:px-8 font-sans">
+      <SEOHead
+        title="Track Print Orders & Shoot Bookings — SHIV STUDIO"
+        description="Track your SHIV STUDIO photo frame order, album designing status, or photography shoot booking using your ID, email, or phone number."
+      />
       <div className="max-w-4xl mx-auto space-y-12">
         
         {/* Page Header */}
         <div className="text-center space-y-3">
-          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider">
-            Real-Time Order Logistics
-          </span>
-          <h1 className="text-3xl sm:text-5xl font-sans font-bold text-white tracking-tight">
-            Track Orders & Shoot Status
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#D4AF37]">
+            Real-Time Status Tracker
+          </p>
+          <h1 className="font-serif text-3xl sm:text-5xl font-semibold text-white tracking-tight">
+            Track Orders & Shoot Bookings
           </h1>
-          <p className="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
-            Enter your Email, Phone Number, or unique Invoice ID (e.g., LM-XXXXXX, BK-XXXXXX) to trace your ongoing print jobs, photo deliveries, and staff design workflows.
+          <p className="max-w-2xl mx-auto text-neutral-400 text-sm sm:text-base leading-relaxed">
+            Enter your Email, Phone Number, or Order/Booking ID to view your current print status, shoot schedule, and invoice.
           </p>
         </div>
 
@@ -131,8 +184,32 @@ export const TrackOrder: React.FC = () => {
           </button>
         </form>
 
+        {authNotice && (
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl p-6 text-center space-y-3">
+            <Lock className="h-7 w-7 text-[#D4AF37] mx-auto" />
+            <h3 className="text-base font-semibold text-white">Sign In Required for Private Order &amp; Booking Lookup</h3>
+            <p className="text-xs text-neutral-400 max-w-md mx-auto">
+              To protect client phone numbers, addresses, and uploaded photos, please sign in with your SHIV STUDIO client account or contact us on WhatsApp with your Order/Booking ID.
+            </p>
+            <div className="pt-2 flex justify-center gap-3">
+              <Link
+                to="/login"
+                className="px-5 py-2.5 bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] font-semibold rounded-xl text-xs uppercase tracking-wider"
+              >
+                Sign In to Track
+              </Link>
+              <Link
+                to="/contact"
+                className="px-5 py-2.5 bg-white/5 border border-white/15 hover:border-[#D4AF37] text-white font-semibold rounded-xl text-xs uppercase tracking-wider"
+              >
+                Contact Studio
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Tracking results view */}
-        {searched && !loading && orderResults.length === 0 && bookingResults.length === 0 && (
+        {searched && !loading && !authNotice && orderResults.length === 0 && bookingResults.length === 0 && (
           <div className="text-center py-16 rounded-2xl border border-slate-800 bg-slate-900/30 text-slate-500 text-xs sm:text-sm">
             <p>No active print orders or scheduled shoots found matching query.</p>
           </div>

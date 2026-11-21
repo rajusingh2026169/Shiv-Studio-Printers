@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { VideoItem } from '../types';
 import { validateFirebaseStorageUrl, deleteStorageFileByUrl, uploadThumbnailResumable, validateAndFilterVideoDocs } from './videoUtils';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 
 /**
  * Saves video document to Firestore collection 'videos'.
@@ -30,12 +31,12 @@ export async function saveVideoMetadata(videoData: Partial<VideoItem>): Promise<
       validThumbnailUrl = await uploadThumbnailResumable(validThumbnailUrl, videoData.category || 'gallery');
     } catch (e) {
       console.warn('Fallback thumbnail URL applied:', e);
-      validThumbnailUrl = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+      validThumbnailUrl = STUDIO_IMAGES.cinematicDrone;
     }
   }
 
   if (!validThumbnailUrl) {
-    validThumbnailUrl = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+    validThumbnailUrl = STUDIO_IMAGES.cinematicDrone;
   }
 
   const title = videoData.title?.trim();

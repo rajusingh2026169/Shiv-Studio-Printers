@@ -1,4 +1,12 @@
-export type UserRole = 'admin' | 'customer';
+export type UserRole =
+  | 'admin'
+  | 'customer'
+  | 'Super Admin'
+  | 'Admin'
+  | 'Photographer'
+  | 'Designer'
+  | 'Printing Staff'
+  | 'Customer';
 
 export interface UserProfile {
   uid: string;
@@ -9,6 +17,7 @@ export interface UserProfile {
   mobile?: string;
   role: UserRole;
   address?: string;
+  avatarUrl?: string;
   createdAt: string;
 }
 
@@ -21,7 +30,7 @@ export interface VideoItem {
   duration?: number | string;
   fileSize?: number | string;
   category: 'products' | 'services' | 'gallery' | 'portfolio' | string;
-  entityId?: string; // productId, serviceId, galleryId
+  entityId?: string;
   order?: number;
   uploadedBy?: string;
   status?: string;
@@ -32,27 +41,79 @@ export interface VideoItem {
 
 export interface ServiceItem {
   id: string;
+  slug?: string;
   title: string;
-  category: 'Photography' | 'Printing';
+  category: 'Photography' | 'Printing' | 'Videography' | 'Design' | string;
   description: string;
+  shortDescription?: string;
   price: number;
+  startingPrice?: number;
   image: string;
+  coverImage?: string;
   gallery: string[];
+  deliverables?: string[];
   videos?: VideoItem[];
+  isPublished?: boolean;
+  order?: number;
   enableGst?: boolean;
   gstPercent?: number;
   gstIncludedInPrice?: boolean;
 }
 
+export type PackageCategory =
+  | 'Pre-Wedding'
+  | 'Wedding'
+  | 'Birthday'
+  | 'Engagement & Ring Ceremony'
+  | 'Event Photography'
+  | 'Maternity & Baby Photography';
+
+export interface PackageItem {
+  id: string;
+  name: string;
+  category: PackageCategory | string;
+  price: number;
+  image: string;
+  duration: string;
+  editedPhotosCount: string;
+  reelsCount: string;
+  albumDetails: string;
+  frameDetails: string;
+  description: string;
+  includedServices: string[];
+  isPublished: boolean;
+  isFeatured?: boolean;
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type GalleryCategory =
+  | 'Wedding'
+  | 'Pre-Wedding'
+  | 'Pre Wedding'
+  | 'Engagement'
+  | 'Birthday'
+  | 'Maternity'
+  | 'Baby'
+  | 'Events'
+  | 'Cinematic Films'
+  | 'Album Designs'
+  | 'Drone'
+  | 'Albums'
+  | 'Videos';
+
 export interface GalleryItem {
   id: string;
   title: string;
-  category: 'Wedding' | 'Pre Wedding' | 'Baby' | 'Events' | 'Birthday' | 'Drone' | 'Albums' | 'Videos';
+  category: GalleryCategory | string;
   imageUrl: string;
   videoUrl?: string;
   thumbnailUrl?: string;
   mediaType?: 'photo' | 'video';
   isFeatured?: boolean;
+  altText?: string;
+  createdAt?: string;
 }
 
 export interface ProductImageItem {
@@ -95,8 +156,6 @@ export interface ProductItem {
   reviewsCount: number;
   GST?: number;
   tags?: string[];
-
-  // Professional E-commerce Fields
   userId?: string;
   sku?: string;
   barcode?: string;
@@ -182,7 +241,6 @@ export interface WeddingCardItem {
   updatedAt?: string;
 }
 
-
 export interface CartItem {
   id: string;
   productId: string;
@@ -193,22 +251,36 @@ export interface CartItem {
   quantity: number;
 }
 
+export type BookingStatus =
+  | 'Pending'
+  | 'Approved'
+  | 'Completed'
+  | 'Cancelled'
+  | 'New'
+  | 'Contacted'
+  | 'Discussion'
+  | 'Confirmed';
+
 export interface Booking {
   id: string;
   customerId: string;
   customerName: string;
   customerPhone: string;
+  whatsappNumber?: string;
   customerEmail: string;
   address: string;
   serviceId: string;
   serviceTitle: string;
+  packageId?: string;
+  packageName?: string;
+  eventType?: string;
   date: string;
   time: string;
   location: string;
   notes?: string;
   advancePaid: number;
   totalPrice: number;
-  status: 'Pending' | 'Approved' | 'Completed' | 'Cancelled';
+  status: BookingStatus;
   photographerId?: string;
   photographerName?: string;
   createdAt: string;
@@ -219,6 +291,25 @@ export interface Booking {
   paymentStatus?: 'Paid' | 'Pending' | 'Failed' | 'Refunded';
   paymentDate?: string;
   dueAmount?: number;
+}
+
+export interface EnquiryItem {
+  id: string;
+  enquiryNumber?: string;
+  fullName: string;
+  name?: string;
+  phone: string;
+  whatsappNumber?: string;
+  email?: string;
+  service?: string;
+  packageName?: string;
+  eventDate?: string;
+  eventLocation?: string;
+  subject?: string;
+  message: string;
+  status: 'New' | 'Contacted' | 'Discussion' | 'Confirmed' | 'Completed' | 'Cancelled';
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export type DiscountType = 'PERCENTAGE' | 'FIXED';
@@ -238,8 +329,8 @@ export interface Coupon {
   applicableProductIds?: string[];
   validFrom: string;
   validUntil: string;
-  usageLimit: number; // Total limit, 0 = unlimited
-  usageLimitPerCustomer: number; // Limit per customer, 0 = unlimited
+  usageLimit: number;
+  usageLimitPerCustomer: number;
   timesUsed: number;
   isActive: boolean;
   active?: boolean;
@@ -391,12 +482,25 @@ export interface ReviewItem {
   customerName: string;
   rating: number;
   comment: string;
+  serviceCategory?: string;
   reply?: string;
+  isPublished?: boolean;
   date: string;
+}
+
+export interface InstagramPostItem {
+  id: string;
+  imageUrl: string;
+  caption: string;
+  postUrl?: string;
 }
 
 export interface StudioSettings {
   studioName: string;
+  tagline?: string;
+  creativeBrand?: string;
+  instagramHandle?: string;
+  instagramUrl?: string;
   phone: string;
   email: string;
   address: string;
@@ -404,10 +508,34 @@ export interface StudioSettings {
   bankName: string;
   bankAccount: string;
   bankIfsc: string;
+  upiId?: string;
   logoUrl?: string;
+  faviconUrl?: string;
+  whatsappNumber?: string;
+  googleMapUrl?: string;
+  googleBusinessUrl?: string;
+  officeHours?: string;
+  heroTagline?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  heroImageUrl?: string;
+  aboutTitle?: string;
+  aboutDescription?: string;
+  aboutEst?: string;
+  aboutImageUrl?: string;
+  footerText?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
+  canonicalDomain?: string;
+  deliveryCharge?: number;
+  freeDeliveryThreshold?: number;
+  instagramGallery?: InstagramPostItem[];
+  team?: { id?: string; name: string; role: string; image?: string }[];
+  categoryImages?: Record<string, string>;
 }
 
-export type BannerDisplayPosition = 
+export type BannerDisplayPosition =
   | 'homepage_top'
   | 'hero'
   | 'sticky_announcement'
@@ -436,5 +564,3 @@ export interface OfferBanner {
   createdAt: string;
   updatedAt?: string;
 }
-
-

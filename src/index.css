@@ -1,1 +1,80 @@
 @import "tailwindcss";
+
+@theme {
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-obsidian: #111111;
+  --color-charcoal: #1A1A1A;
+  --color-gold: #D4AF37;
+  --color-gold-hover: #E5C158;
+  --color-surface-light: #F7F7F7;
+
+  /* Compatibility mappings for slate-850/950 utilities across legacy modules */
+  --color-slate-850: #222222;
+  --color-slate-950: #111111;
+  --color-slate-900: #1A1A1A;
+  --color-amber-400: #D4AF37;
+  --color-amber-500: #D4AF37;
+  --color-amber-600: #B89427;
+
+  --text-xxs: 0.7rem;
+}
+
+@layer base {
+  html {
+    background-color: #111111;
+    color: #FFFFFF;
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #111111;
+    color: #FFFFFF;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, .font-editorial {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.35s ease-out forwards;
+}
+
+@media print {
+  body {
+    background-color: #FFFFFF !important;
+    color: #111111 !important;
+  }
+}

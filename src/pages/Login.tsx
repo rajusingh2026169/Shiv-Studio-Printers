@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, isAdminRoleValue } from '../context/AuthContext';
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { Camera, ShieldAlert, Key, Mail } from 'lucide-react';
+import { ShieldAlert, Key, Mail, ArrowRight } from 'lucide-react';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { SEOHead } from '../components/SEOHead';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -16,6 +18,7 @@ export const Login: React.FC = () => {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
     setLoading(true);
 
@@ -24,39 +27,29 @@ export const Login: React.FC = () => {
       const user = auth.currentUser;
       if (user) {
         const docSnap = await getDoc(doc(db, 'users', user.uid));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const role = data.role;
-          if (role === 'admin' || role === 'Super Admin' || role === 'Admin' || user.email?.toLowerCase() === 'admin@shivstudio.com') {
-            navigate('/admin/dashboard');
-          } else {
-            navigate('/customer/dashboard');
-          }
+        const role = docSnap.exists() ? docSnap.data().role : 'customer';
+        if (isAdminRoleValue(role)) {
+          navigate('/admin/dashboard');
         } else {
-          if (user.email?.toLowerCase() === 'admin@shivstudio.com') {
-            navigate('/admin/dashboard');
-          } else {
-            navigate('/customer/dashboard');
-          }
+          navigate('/customer/dashboard');
         }
       } else {
         navigate('/');
       }
     } catch (err: any) {
-      console.error('Login error:', err?.code || err?.message);
       const code = err?.code || '';
       if (
         code === 'auth/invalid-credential' ||
         code === 'auth/user-not-found' ||
         code === 'auth/wrong-password'
       ) {
-        setError('Invalid email or password. If you do not have an account yet, please click "Sign Up" below.');
+        setError('Invalid email or password. Please verify your credentials or create a client account.');
       } else if (code === 'auth/invalid-email') {
         setError('Please enter a valid email address.');
       } else if (code === 'auth/too-many-requests') {
-        setError('Too many unsuccessful attempts. Please wait a few moments and try again.');
+        setError('Too many unsuccessful attempts. Please wait a moment and try again.');
       } else {
-        setError(err?.message?.replace(/^Firebase:\s*/, '') || 'Authentication failed. Please verify your credentials.');
+        setError(err?.message?.replace(/^Firebase:\s*/, '') || 'Authentication failed. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -64,73 +57,84 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-950 min-h-[85vh] flex items-center justify-center p-4">
-      <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl overflow-hidden">
-        
-        {/* Visual glass flare background decorative elements */}
-        <div className="absolute top-0 right-0 h-28 w-28 bg-amber-500/10 rounded-full blur-2xl z-0"></div>
-
-        <div className="relative z-10 text-center space-y-2">
-          <Link to="/" className="inline-flex items-center space-x-2">
-            <Camera className="h-10 w-10 text-amber-500 animate-pulse" />
+    <div className="bg-[#111111] min-h-[85vh] flex items-center justify-center px-4 py-16">
+      <SEOHead
+        title="Sign In — SHIV STUDIO"
+        description="Sign in to your SHIV STUDIO client portal or authorized studio administration workspace."
+        canonicalPath="/login"
+      />
+      <div className="w-full max-w-md bg-[#1A1A1A] border border-white/10 rounded-2xl p-8 space-y-6 shadow-2xl">
+        <div className="text-center space-y-3">
+          <Link to="/" className="inline-flex items-center justify-center">
+            <img
+              src={STUDIO_IMAGES.logo}
+              alt="SHIV STUDIO Logo"
+              className="h-12 w-12 rounded-full object-cover border border-[#D4AF37]/40"
+            />
           </Link>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white mt-4">
-            Sign In to Shiv Studio
-          </h2>
-          <p className="text-xxs sm:text-xs text-slate-400">
-            Access secure client archives, track print queues, or coordinate event schedules instantly.
+          <h1 className="font-display text-3xl font-semibold text-white tracking-tight">
+            Sign In to SHIV STUDIO
+          </h1>
+          <p className="text-xs text-neutral-400">
+            Access bookings, orders, invoices, or studio management controls.
           </p>
         </div>
 
         {error && (
-          <div className="bg-rose-500/15 border border-rose-500/30 p-3 rounded-xl flex items-start space-x-2.5 text-rose-400 text-xs font-sans">
-            <ShieldAlert className="h-4.5 w-4.5 shrink-0" />
+          <div className="bg-rose-500/10 border border-rose-500/30 p-3.5 rounded-xl flex items-start space-x-2.5 text-rose-300 text-xs">
+            <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs font-sans relative z-10">
+        <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
           <div className="space-y-1.5">
-            <label className="text-slate-400 font-semibold flex items-center gap-1">
-              <Mail className="h-3.5 w-3.5 text-amber-500" />
-              <span>Registered Email Address</span>
+            <label className="text-neutral-300 font-medium flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 text-[#D4AF37]" />
+              <span>Email Address</span>
             </label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
-              placeholder="e.g. shivsharan52796@gmail.com"
+              className="w-full bg-[#111111] border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#D4AF37] transition-colors"
+              placeholder="you@example.com"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-slate-400 font-semibold flex items-center gap-1">
-              <Key className="h-3.5 w-3.5 text-amber-500" />
-              <span>Secret Password</span>
+            <label className="text-neutral-300 font-medium flex items-center gap-1.5">
+              <Key className="h-3.5 w-3.5 text-[#D4AF37]" />
+              <span>Password</span>
             </label>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
-              placeholder="••••••••"
+              className="w-full bg-[#111111] border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#D4AF37] transition-colors"
+              placeholder="Enter password"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-amber-400 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider transition-colors"
+            className="w-full py-3.5 bg-[#D4AF37] hover:bg-[#E5C158] disabled:bg-white/10 disabled:text-neutral-500 text-[#111111] font-semibold rounded-xl text-xs tracking-wider uppercase transition-colors flex items-center justify-center gap-2"
           >
-            {loading ? 'Authenticating Profile...' : 'Sign In to Portal'}
+            <span>{loading ? 'Signing In...' : 'Sign In'}</span>
+            {!loading && <ArrowRight className="h-4 w-4" />}
           </button>
         </form>
 
-        <div className="pt-4 border-t border-slate-800/60 text-center text-xs text-slate-400 font-sans">
-          <p>Don't have an account? <Link to="/register" className="text-amber-400 font-bold hover:underline">Sign Up</Link></p>
+        <div className="pt-4 border-t border-white/10 text-center text-xs text-neutral-400">
+          <p>
+            New customer?{' '}
+            <Link to="/register" className="text-[#D4AF37] font-semibold hover:underline">
+              Create Client Account
+            </Link>
+          </p>
         </div>
       </div>
     </div>

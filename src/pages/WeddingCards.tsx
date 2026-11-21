@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { WeddingCardItem } from '../types';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { SEOHead } from '../components/SEOHead';
 import { 
   Search, 
   Filter, 
@@ -179,17 +181,20 @@ export const WeddingCards: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-950 text-slate-100 min-h-screen pb-20 font-sans">
+    <div className="bg-[#111111] text-white min-h-screen pb-20 font-sans">
+      <SEOHead
+        title="Wedding Cards & Royal Invitations — SHIV STUDIO & Arvind Creation"
+        description="Browse royal laser-cut, velvet box, acrylic, and gold foil wedding invitation cards by SHIV STUDIO & Arvind Creation in Khaga, Fatehpur."
+      />
       
       {/* Hero Header Section */}
-      <div className="relative bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950 border-b border-slate-800/80 pt-12 pb-16 px-4 sm:px-6 lg:px-8">
+      <div className="relative bg-gradient-to-b from-[#1A1A1A] via-[#111111] to-[#111111] border-b border-white/10 pt-12 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto text-center space-y-6">
-          <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-mono font-bold uppercase tracking-wider">
-            <Sparkles className="h-4 w-4 animate-pulse" />
-            <span>Exquisite Wedding Invitations & Cards</span>
-          </div>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#D4AF37]">
+            Arvind Creation — Luxury Wedding Invitations
+          </p>
 
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
+          <h1 className="font-serif text-3xl sm:text-5xl font-semibold text-white tracking-tight leading-tight">
             Wedding Card Collection
           </h1>
 
@@ -387,7 +392,7 @@ export const WeddingCards: React.FC = () => {
                   {/* Image Display */}
                   <div className="relative aspect-[4/3] bg-slate-950 overflow-hidden">
                     <img
-                      src={card.mainImage || card.images?.front || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800'}
+                      src={card.mainImage || card.images?.front || STUDIO_IMAGES.luxuryAlbumFrame}
                       alt={card.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       referrerPolicy="no-referrer"

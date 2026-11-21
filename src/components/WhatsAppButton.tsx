@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, MessageSquare } from 'lucide-react';
+import { Phone, MessageCircle } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+
+export function buildWhatsAppUrl(phoneNumber: string, message: string): string {
+  const digits = (phoneNumber || '+917905256355').replace(/[^0-9]/g, '');
+  const formatted = digits.length === 10 ? `91${digits}` : digits || '917905256355';
+  return `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
+}
 
 export const WhatsAppButton: React.FC = () => {
   const [phone, setPhone] = useState('+917905256355');
@@ -13,48 +19,43 @@ export const WhatsAppButton: React.FC = () => {
         const settingsSnap = await getDoc(doc(db, 'website_settings', 'studio'));
         if (settingsSnap.exists()) {
           const data = settingsSnap.data();
-          if (data.whatsappNumber) {
-            setWhatsapp(data.whatsappNumber);
-          }
-          if (data.phone) {
-            // Take the first number if multiple
-            const firstPhone = data.phone.split(',')[0].trim();
-            setPhone(firstPhone);
-          }
+          if (data.whatsappNumber) setWhatsapp(data.whatsappNumber);
+          if (data.phone) setPhone(data.phone.split(',')[0].trim());
         }
-      } catch (err: any) {
-        console.warn('Notice (WhatsAppButton): Offline mode or network issue, using default contact number.');
+      } catch {
+        // Default fallback
       }
     };
     fetchSettings();
   }, []);
 
-  const cleanWhatsappNumber = whatsapp.replace('+', '').replace(/\s+/g, '');
-  const whatsappUrl = `https://wa.me/${cleanWhatsappNumber}?text=Hello%20Shiv%20Studio%2C%20I%20want%20to%20inquire%20about%20a%20photography%20and%20printing%20package.`;
+  const whatsappUrl = buildWhatsAppUrl(
+    whatsapp,
+    'Hello SHIV STUDIO, I would like to enquire about photography services / packages.'
+  );
   const callUrl = `tel:${phone}`;
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 flex flex-col space-y-3">
-      {/* Phone Call Floating Button */}
+    <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end space-y-2.5">
       <a
         href={callUrl}
-        className="flex items-center justify-center h-12 w-12 rounded-full bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-xl border border-amber-400 hover:scale-110 transition-transform duration-200"
-        title="Call Shiv Studio"
-        referrerPolicy="no-referrer"
+        className="flex items-center justify-center h-11 w-11 rounded-full bg-[#1A1A1A] hover:bg-[#D4AF37] text-[#D4AF37] hover:text-[#111111] shadow-xl border border-[#D4AF37]/40 transition-colors"
+        title="Call SHIV STUDIO"
+        aria-label="Call SHIV STUDIO"
       >
-        <Phone className="h-5 w-5" />
+        <Phone className="h-4.5 w-4.5" />
       </a>
 
-      {/* WhatsApp Chat Floating Button */}
       <a
         href={whatsappUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-center h-14 w-14 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-2xl border border-emerald-400 hover:scale-110 transition-transform duration-200 animate-bounce"
-        title="Chat on WhatsApp"
-        referrerPolicy="no-referrer"
+        className="flex items-center gap-2 h-11 px-4 rounded-full bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] font-semibold text-xs shadow-2xl border border-[#D4AF37] transition-colors"
+        title="Enquire on WhatsApp"
+        aria-label="Enquire on WhatsApp"
       >
-        <MessageSquare className="h-6 w-6 fill-current" />
+        <MessageCircle className="h-4.5 w-4.5" />
+        <span className="hidden sm:inline whitespace-nowrap">WhatsApp</span>
       </a>
     </div>
   );

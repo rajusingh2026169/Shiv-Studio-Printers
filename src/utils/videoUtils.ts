@@ -2,6 +2,7 @@ import { storage, auth } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, UploadTask } from 'firebase/storage';
 import { VideoItem } from '../types';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 
 export const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
 
@@ -97,14 +98,14 @@ export function validateFirebaseStorageUrl(url: string | undefined, fieldName: s
     trimmed.startsWith('file:') ||
     trimmed.startsWith('gs:') ||
     trimmed.startsWith('data:') ||
-    trimmed.startsWith('/') ||
     trimmed.startsWith('./')
   ) {
-    throw new Error(`Invalid ${fieldName}: Local, temporary, blob or gs:// paths are strictly forbidden ("${trimmed}"). Must be a valid HTTPS download URL.`);
+    throw new Error(`Invalid ${fieldName}: Temporary blob, data, or local filesystem paths are forbidden ("${trimmed}").`);
   }
 
-  if (!trimmed.startsWith('https://') && !trimmed.startsWith('http://')) {
-    throw new Error(`Invalid ${fieldName}: URL must be a valid HTTP/HTTPS download URL.`);
+  const isLocalUploadsUrl = trimmed.startsWith('/uploads/');
+  if (!isLocalUploadsUrl && !trimmed.startsWith('https://') && !trimmed.startsWith('http://')) {
+    throw new Error(`Invalid ${fieldName}: URL must be a valid HTTP/HTTPS or /uploads/ URL.`);
   }
 
   return trimmed;
@@ -113,43 +114,40 @@ export function validateFirebaseStorageUrl(url: string | undefined, fieldName: s
 /**
  * Validates array of VideoItems loaded from Firestore collection 'videos'.
  * Enforces:
- * 1. videoUrl exists and is a valid HTTPS/Storage download URL.
- * 2. thumbnailUrl exists and is a valid HTTPS/Storage URL (NOT a Base64 string or blob URL).
- * If any item is missing required fields or has invalid URLs, logs a detailed console message explaining why it was skipped.
+ * 1. videoUrl exists and is a valid HTTPS/HTTP or /uploads/ download URL.
+ * 2. thumbnailUrl exists and is a clean URL (NOT a Base64 string or blob URL).
  */
 export function validateAndFilterVideoDocs(docs: VideoItem[]): VideoItem[] {
-  const DEFAULT_STOCK_THUMB = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+  const DEFAULT_STOCK_THUMB = STUDIO_IMAGES.cinematicDrone;
   const validVideos: VideoItem[] = [];
 
   docs.forEach((docItem) => {
     const docId = docItem.id || 'Unknown_ID';
     const docTitle = docItem.title || 'Untitled Video';
 
-    // 1. Verify videoUrl
     if (!docItem.videoUrl || typeof docItem.videoUrl !== 'string' || !docItem.videoUrl.trim()) {
       console.warn(`[Video System] Skipped video document ID "${docId}" ("${docTitle}"): Missing or empty 'videoUrl'.`, docItem);
       return;
     }
 
     const trimmedVideoUrl = docItem.videoUrl.trim();
+    const isHttp = trimmedVideoUrl.startsWith('https://') || trimmedVideoUrl.startsWith('http://');
+    const isServerUpload = trimmedVideoUrl.startsWith('/uploads/');
     if (
-      (!trimmedVideoUrl.startsWith('https://') && !trimmedVideoUrl.startsWith('http://')) ||
+      (!isHttp && !isServerUpload) ||
       trimmedVideoUrl.startsWith('blob:') ||
       trimmedVideoUrl.startsWith('file:') ||
       trimmedVideoUrl.startsWith('gs:')
     ) {
-      console.warn(`[Video System] Skipped video document ID "${docId}" ("${docTitle}"): 'videoUrl' is not a valid HTTPS download URL ("${trimmedVideoUrl}").`, docItem);
+      console.warn(`[Video System] Skipped video document ID "${docId}" ("${docTitle}"): 'videoUrl' is not a playable URL ("${trimmedVideoUrl}").`, docItem);
       return;
     }
 
-    // 2. Verify thumbnailUrl
     let finalThumb = docItem.thumbnailUrl?.trim() || '';
 
     if (!finalThumb) {
-      console.warn(`[Video System] Warning: Video document ID "${docId}" ("${docTitle}") missing 'thumbnailUrl'. Using default stock thumbnail.`);
       finalThumb = DEFAULT_STOCK_THUMB;
     } else if (finalThumb.startsWith('data:') || finalThumb.length > 2000 || finalThumb.startsWith('blob:')) {
-      console.warn(`[Video System] Warning: Video document ID "${docId}" ("${docTitle}") contains a Base64/blob 'thumbnailUrl'. Replacing with stock thumbnail URL.`);
       finalThumb = DEFAULT_STOCK_THUMB;
     }
 
@@ -316,8 +314,76 @@ export function captureFrameFromVideoElement(video: HTMLVideoElement): Promise<B
 }
 
 /**
- * Uploads a video file to Firebase Storage under `/videos/` using uploadBytesResumable().
- * Returns uploadTask and a promise resolving strictly to the permanent Firebase Download URL (HTTPS).
+ * Helper to upload a video file via local Express /api/upload endpoint with XHR progress.
+ */
+function uploadVideoViaApi(
+  file: File,
+  onProgress?: (info: UploadProgressInfo) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    let lastTime = Date.now();
+    let lastBytes = 0;
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const progress = Math.round((event.loaded / event.total) * 100);
+      const currentTime = Date.now();
+      const timeDiff = (currentTime - lastTime) / 1000;
+      const bytesDiff = event.loaded - lastBytes;
+
+      let speedStr = '0 MB/s';
+      let remainingTimeStr = 'Calculating...';
+
+      if (timeDiff > 0.3 && bytesDiff >= 0) {
+        const speedBytesPerSec = bytesDiff / timeDiff;
+        speedStr = `${formatBytes(speedBytesPerSec)}/s`;
+        const remainingBytes = event.total - event.loaded;
+        const remainingSec = speedBytesPerSec > 0 ? Math.ceil(remainingBytes / speedBytesPerSec) : 0;
+        remainingTimeStr = formatDuration(remainingSec);
+        lastTime = currentTime;
+        lastBytes = event.loaded;
+      }
+
+      if (onProgress) {
+        onProgress({
+          progress: isNaN(progress) ? 0 : progress,
+          bytesTransferred: event.loaded,
+          totalBytes: event.total,
+          speed: speedStr,
+          speedBytesPerSec: 0,
+          remainingTime: remainingTimeStr
+        });
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data?.url) {
+            resolve(data.url);
+            return;
+          }
+        } catch {
+          // fallthrough
+        }
+      }
+      reject(new Error(`Server upload failed with HTTP ${xhr.status}`));
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during server video upload'));
+    xhr.open('POST', '/api/upload', true);
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Uploads a video file to Firebase Storage under `/videos/` using uploadBytesResumable(),
+ * automatically falling back to `/api/upload` if Firebase Storage rejects or stalls.
  */
 export function uploadVideoResumable(
   file: File,
@@ -331,7 +397,6 @@ export function uploadVideoResumable(
   const uploadPath = `videos/${category}/${timestamp}_${sanitizeName}`;
   const storageRef = ref(storage, uploadPath);
 
-  // 1. Log Firebase Storage path
   console.log('[Video System] Firebase Storage path:', uploadPath);
 
   const metadata = {
@@ -347,10 +412,41 @@ export function uploadVideoResumable(
   const promise = new Promise<string>((resolve, reject) => {
     let lastTime = Date.now();
     let lastBytes = 0;
+    let settled = false;
+    let fallbackTriggered = false;
+
+    const triggerFallbackUpload = async () => {
+      if (fallbackTriggered || settled) return;
+      fallbackTriggered = true;
+      try {
+        uploadTask.cancel();
+      } catch {
+        // ignore cancel error
+      }
+      try {
+        console.warn('[Video System] Switching video upload to local Express /api/upload endpoint...');
+        const apiUrl = await uploadVideoViaApi(file, onProgress);
+        settled = true;
+        resolve(apiUrl);
+      } catch (apiErr) {
+        settled = true;
+        reject(apiErr);
+      }
+    };
+
+    // Guard against Firebase Storage silent stall in environments without Storage CORS/bucket
+    const stallTimer = setTimeout(() => {
+      if (!settled && lastBytes === 0) {
+        triggerFallbackUpload();
+      }
+    }, 6000);
 
     uploadTask.on(
       'state_changed',
       (snapshot) => {
+        if (snapshot.bytesTransferred > 0) {
+          clearTimeout(stallTimer);
+        }
         const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
         const currentTime = Date.now();
         const timeDiff = (currentTime - lastTime) / 1000;
@@ -369,7 +465,7 @@ export function uploadVideoResumable(
           lastBytes = snapshot.bytesTransferred;
         }
 
-        if (onProgress) {
+        if (onProgress && !fallbackTriggered) {
           onProgress({
             progress: isNaN(progress) ? 0 : progress,
             bytesTransferred: snapshot.bytesTransferred,
@@ -381,26 +477,22 @@ export function uploadVideoResumable(
         }
       },
       (error) => {
-        console.error('[Video System] Firebase Storage upload error:', error);
-        reject(error);
+        clearTimeout(stallTimer);
+        if (settled || fallbackTriggered) return;
+        console.warn('[Video System] Firebase Storage upload notice, attempting server fallback:', error?.code || error?.message);
+        triggerFallbackUpload();
       },
       async () => {
+        clearTimeout(stallTimer);
+        if (settled || fallbackTriggered) return;
         try {
-          console.log('[Video System] Upload complete! Calling getDownloadURL(uploadTask.snapshot.ref)...');
-          
-          // 1. Get download URL after upload completes
           const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-
-          // 2. Log Download URL
-          console.log('[Video System] Download URL:', downloadUrl);
-
-          // 3. Strict validation: Never allow blob:, file://, local paths, gs://, etc.
           validateFirebaseStorageUrl(downloadUrl, 'downloadUrl');
-
+          settled = true;
           resolve(downloadUrl);
         } catch (urlErr) {
-          console.error('[Video System] Error retrieving download URL after upload:', urlErr);
-          reject(urlErr);
+          console.warn('[Video System] Error retrieving download URL, attempting server fallback:', urlErr);
+          triggerFallbackUpload();
         }
       }
     );
@@ -438,7 +530,7 @@ export async function uploadThumbnailResumable(
   thumbnailInput: Blob | File | string,
   category: string = 'gallery'
 ): Promise<string> {
-  const DEFAULT_STOCK_THUMB = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+  const DEFAULT_STOCK_THUMB = STUDIO_IMAGES.cinematicDrone;
 
   if (!thumbnailInput) {
     return DEFAULT_STOCK_THUMB;
@@ -476,6 +568,21 @@ export async function uploadThumbnailResumable(
     cacheControl: 'public,max-age=31536000'
   };
 
+  // Prefer fast local /api/upload for thumbnail blobs before Firebase Storage
+  try {
+    const formData = new FormData();
+    formData.append('file', blobToUpload, `thumb_${timestamp}.${ext}`);
+    const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+    if (resp.ok) {
+      const json = await resp.json();
+      if (json?.url) {
+        return json.url;
+      }
+    }
+  } catch {
+    // fallback to Firebase Storage below
+  }
+
   try {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Thumbnail storage upload timeout')), 10000)
@@ -488,7 +595,7 @@ export async function uploadThumbnailResumable(
     console.log(`[Video System] Thumbnail Uploaded to Firebase Storage: ${downloadUrl}`);
     return downloadUrl;
   } catch (err) {
-    console.warn('[Video System] Storage thumbnail upload notice, using fallback HTTPS URL:', err);
+    console.warn('[Video System] Storage thumbnail upload notice, using fallback asset:', err);
     return DEFAULT_STOCK_THUMB;
   }
 }

@@ -150,66 +150,71 @@ export async function validateCoupon(
 
     // 5. Customer Usage Limit check
     if (coupon.usageLimitPerCustomer && coupon.usageLimitPerCustomer > 0) {
-      if (customerEmail || customerId || customerPhone) {
-        const usagesRef = collection(db, 'coupon_usages');
-        const usageSnap = await getDocs(usagesRef);
-        
-        let customerUsageCount = 0;
-        usageSnap.forEach((uDoc) => {
-          const uData = uDoc.data();
-          if (uData.couponCode === cleanCode) {
-            const matchEmail = customerEmail && uData.customerEmail?.toLowerCase() === customerEmail.toLowerCase();
-            const matchId = customerId && uData.customerId === customerId;
-            const matchPhone = customerPhone && uData.customerPhone === customerPhone;
-            if (matchEmail || matchId || matchPhone) {
+      if (customerId) {
+        try {
+          const usagesRef = collection(db, 'coupon_usages');
+          const usageSnap = await getDocs(query(usagesRef, where('customerId', '==', customerId)));
+
+          let customerUsageCount = 0;
+          usageSnap.forEach((uDoc) => {
+            const uData = uDoc.data();
+            if (uData.couponCode === cleanCode) {
               customerUsageCount++;
             }
-          }
-        });
+          });
 
-        if (customerUsageCount >= coupon.usageLimitPerCustomer) {
-          return {
-            isValid: false,
-            message: 'Coupon usage limit exceeded for your account.',
-            coupon,
-            calculatedDiscount: 0,
-            applicableSubtotal: subtotal
-          };
+          if (customerUsageCount >= coupon.usageLimitPerCustomer) {
+            return {
+              isValid: false,
+              message: 'Coupon usage limit exceeded for your account.',
+              coupon,
+              calculatedDiscount: 0,
+              applicableSubtotal: subtotal
+            };
+          }
+        } catch {
+          // Non-fatal if user lacks global read permission
         }
       }
     }
 
     // 6. First Order Only check
     if (coupon.firstOrderOnly) {
-      if (!customerEmail && !customerId) {
+      if (!customerId) {
         return {
           isValid: false,
-          message: 'Please sign in or enter billing email to verify first order eligibility.',
+          message: 'Please sign in to your client account to verify first-order coupon eligibility.',
           coupon,
           calculatedDiscount: 0,
           applicableSubtotal: subtotal
         };
       }
 
-      const ordersRef = collection(db, 'orders');
-      const orderSnap = await getDocs(ordersRef);
-      let previousOrderCount = 0;
+      try {
+        const ordersRef = collection(db, 'orders');
+        const orderSnap = await getDocs(query(ordersRef, where('customerId', '==', customerId)));
+        let previousOrderCount = 0;
 
-      orderSnap.forEach((oDoc) => {
-        const oData = oDoc.data();
-        if (oData.status !== 'Cancelled') {
-          const matchEmail = customerEmail && oData.customerEmail?.toLowerCase() === customerEmail.toLowerCase();
-          const matchId = customerId && oData.customerId === customerId;
-          if (matchEmail || matchId) {
+        orderSnap.forEach((oDoc) => {
+          const oData = oDoc.data();
+          if (oData.status !== 'Cancelled') {
             previousOrderCount++;
           }
-        }
-      });
+        });
 
-      if (previousOrderCount > 0) {
+        if (previousOrderCount > 0) {
+          return {
+            isValid: false,
+            message: 'Coupon is restricted to first-time orders only.',
+            coupon,
+            calculatedDiscount: 0,
+            applicableSubtotal: subtotal
+          };
+        }
+      } catch {
         return {
           isValid: false,
-          message: 'Coupon is restricted to first-time orders only.',
+          message: 'Please sign in to verify first-time order eligibility.',
           coupon,
           calculatedDiscount: 0,
           applicableSubtotal: subtotal

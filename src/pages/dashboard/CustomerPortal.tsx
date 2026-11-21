@@ -5,6 +5,7 @@ import { db } from '../../firebase';
 import { Order, Booking } from '../../types';
 import { User, ShoppingBag, Calendar, Eye, Mail, Phone, MapPin, LogOut } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
+import { SEOHead } from '../../components/SEOHead';
 
 export const CustomerPortal: React.FC = () => {
   const { currentUser, userProfile, logout } = useAuth();
@@ -44,17 +45,21 @@ export const CustomerPortal: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-12 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-[#111111] min-h-screen text-white py-12 px-4 sm:px-6 lg:px-8 font-sans">
+      <SEOHead
+        title="My Account — SHIV STUDIO"
+        description="View your SHIV STUDIO print orders, photography bookings, and invoices."
+      />
       <div className="max-w-5xl mx-auto space-y-10">
         
         {/* Portal Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 border-b border-slate-900 pb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 border-b border-white/10 pb-6">
           <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">
-              <User className="h-7 w-7 text-amber-500 animate-pulse" />
-              <span>Welcome Back, {userProfile?.fullName || 'User'}!</span>
+            <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-white flex items-center gap-2">
+              <User className="h-7 w-7 text-[#D4AF37]" />
+              <span>Welcome Back, {userProfile?.fullName || 'Client'}</span>
             </h1>
-            <p className="text-xxs sm:text-xs text-slate-400">Track raw print orders, retrieve booked venue photographers, and download invoices.</p>
+            <p className="text-xxs sm:text-xs text-neutral-400">Track print orders, view booked photography sessions, and download invoices.</p>
           </div>
 
           <button
@@ -97,7 +102,7 @@ export const CustomerPortal: React.FC = () => {
         {/* Active bookings & historic order lists */}
         {loading ? (
           <div className="space-y-4">
-            {[1, 2].map((n) => <div key={n} className="bg-slate-900 h-32 rounded-3xl animate-pulse"></div>)}
+            {[1, 2].map((n) => <div key={n} className="bg-[#1A1A1A] h-32 rounded-3xl border border-white/10"></div>)}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-xs sm:text-sm">

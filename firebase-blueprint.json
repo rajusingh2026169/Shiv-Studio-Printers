@@ -2,200 +2,339 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User profile containing identity and role details",
+      "description": "Registered studio user profile with role and contact metadata",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "The user's unique Firebase Auth identifier" },
-        "email": { "type": "string", "description": "User email address" },
-        "fullName": { "type": "string", "description": "User's full name" },
-        "phone": { "type": "string", "description": "User's contact phone number" },
-        "role": { "type": "string", "enum": ["Super Admin", "Admin", "Photographer", "Designer", "Printing Staff", "Customer"], "description": "User's system role for authorization checks" },
-        "address": { "type": "string", "description": "Optional physical shipping address" },
-        "createdAt": { "type": "string", "description": "ISO timestamp of profile creation" }
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 254 },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "name": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "mobile": { "type": "string", "maxLength": 40 },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "customer", "Super Admin", "Admin", "Photographer", "Designer", "Printing Staff", "Customer"]
+        },
+        "address": { "type": "string", "maxLength": 500 },
+        "avatarUrl": { "type": "string", "maxLength": 2048 },
+        "createdAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["uid", "email", "fullName", "phone", "role", "createdAt"]
+      "required": ["uid", "email", "fullName", "role", "createdAt"]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Trusted administrator lookup marker document",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 254 },
+        "grantedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid"]
     },
     "ServiceItem": {
       "title": "ServiceItem",
-      "description": "A studio or industrial printing service package",
+      "description": "Photography, videography, album, gift, and printing service offering",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "category": { "type": "string", "enum": ["Photography", "Printing"] },
-        "description": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "slug": { "type": "string", "maxLength": 160 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 8000 },
+        "shortDescription": { "type": "string", "maxLength": 600 },
         "price": { "type": "number" },
-        "image": { "type": "string" },
-        "gallery": { "type": "array" }
+        "startingPrice": { "type": "number" },
+        "image": { "type": "string", "maxLength": 2048 },
+        "coverImage": { "type": "string", "maxLength": 2048 },
+        "gallery": { "type": "array" },
+        "deliverables": { "type": "array" },
+        "isPublished": { "type": "boolean" },
+        "order": { "type": "number" },
+        "enableGst": { "type": "boolean" },
+        "gstPercent": { "type": "number" },
+        "gstIncludedInPrice": { "type": "boolean" }
       },
-      "required": ["id", "title", "category", "description", "price", "image", "gallery"]
+      "required": ["id", "title", "category", "description", "price", "image"]
+    },
+    "PackageItem": {
+      "title": "PackageItem",
+      "description": "Photography & event package managed dynamically from admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 100 },
+        "price": { "type": "number" },
+        "image": { "type": "string", "maxLength": 2048 },
+        "duration": { "type": "string", "maxLength": 160 },
+        "editedPhotosCount": { "type": "string", "maxLength": 160 },
+        "reelsCount": { "type": "string", "maxLength": 160 },
+        "albumDetails": { "type": "string", "maxLength": 500 },
+        "frameDetails": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "includedServices": { "type": "array" },
+        "isPublished": { "type": "boolean" },
+        "isFeatured": { "type": "boolean" },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "name", "category", "price", "description", "isPublished"]
     },
     "GalleryItem": {
       "title": "GalleryItem",
-      "description": "A featured portfolio image highlighting past projects",
+      "description": "Portfolio showcase photograph or media item",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "category": { "type": "string", "enum": ["Wedding", "Pre Wedding", "Baby", "Events", "Birthday", "Drone", "Albums", "Videos"] },
-        "imageUrl": { "type": "string" },
-        "isFeatured": { "type": "boolean" }
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 80 },
+        "imageUrl": { "type": "string", "maxLength": 2048 },
+        "videoUrl": { "type": "string", "maxLength": 2048 },
+        "thumbnailUrl": { "type": "string", "maxLength": 2048 },
+        "mediaType": { "type": "string", "enum": ["photo", "video"] },
+        "isFeatured": { "type": "boolean" },
+        "altText": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "title", "category", "imageUrl"]
     },
-    "ProductItem": {
-      "title": "ProductItem",
-      "description": "An e-store product item like customized frames, albums, and magic mugs",
+    "VideoItem": {
+      "title": "VideoItem",
+      "description": "Cinematic studio highlight film or reel",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "category": { "type": "string" },
-        "price": { "type": "number" },
-        "discountPrice": { "type": "number" },
-        "image": { "type": "string" },
-        "images": { "type": "array" },
-        "stock": { "type": "number" },
-        "description": { "type": "string" },
-        "rating": { "type": "number" },
-        "reviewsCount": { "type": "number" }
+        "id": { "type": "string", "maxLength": 128 },
+        "videoUrl": { "type": "string", "maxLength": 2048 },
+        "thumbnailUrl": { "type": "string", "maxLength": 2048 },
+        "title": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "duration": { "type": "string", "maxLength": 64 },
+        "category": { "type": "string", "maxLength": 80 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "order": { "type": "number" },
+        "uploadedBy": { "type": "string", "maxLength": 254 },
+        "status": { "type": "string", "maxLength": 40 },
+        "views": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "title", "category", "price", "image", "images", "stock", "description", "rating", "reviewsCount"]
+      "required": ["id", "videoUrl", "thumbnailUrl", "title", "category", "createdAt"]
+    },
+    "ProductItem": {
+      "title": "ProductItem",
+      "description": "Storefront product with optional dynamic size/type variants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 250 },
+        "title": { "type": "string", "maxLength": 250 },
+        "slug": { "type": "string", "maxLength": 250 },
+        "sku": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 10000 },
+        "shortDescription": { "type": "string", "maxLength": 1000 },
+        "thumbnailUrl": { "type": "string", "maxLength": 2048 },
+        "coverImageUrl": { "type": "string", "maxLength": 2048 },
+        "image": { "type": "string", "maxLength": 2048 },
+        "price": { "type": "number" },
+        "discount": { "type": "number" },
+        "discountPrice": { "type": "number" },
+        "stock": { "type": "number" },
+        "GST": { "type": "number" },
+        "gstPercent": { "type": "number" },
+        "tags": { "type": "array" },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "number" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "brand": { "type": "string", "maxLength": 120 },
+        "unit": { "type": "string", "maxLength": 40 },
+        "minStockAlert": { "type": "number" },
+        "trackInventory": { "type": "boolean" },
+        "specifications": { "type": "object" },
+        "variants": { "type": "array" },
+        "enableVariants": { "type": "boolean" },
+        "customization": { "type": "object" },
+        "delivery": { "type": "object" },
+        "seo": { "type": "object" },
+        "labels": { "type": "object" }
+      },
+      "required": ["id", "title", "category", "price", "stock"]
+    },
+    "ProductImageItem": {
+      "title": "ProductImageItem",
+      "description": "Externalized product gallery image linked to a product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "imageUrl": { "type": "string", "maxLength": 2048 },
+        "order": { "type": "number" },
+        "alt": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["productId", "imageUrl", "order"]
+    },
+    "WeddingCardItem": {
+      "title": "WeddingCardItem",
+      "description": "Customizable printed wedding invitation card design",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "designCode": { "type": "string", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 100 },
+        "price": { "type": "number" },
+        "minOrderQuantity": { "type": "number" },
+        "paperType": { "type": "string", "maxLength": 160 },
+        "printingType": { "type": "string", "maxLength": 160 },
+        "size": { "type": "string", "maxLength": 100 },
+        "color": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "isAvailable": { "type": "boolean" },
+        "isFeatured": { "type": "boolean" },
+        "whatsappNumber": { "type": "string", "maxLength": 40 },
+        "mainImage": { "type": "string", "maxLength": 2048 },
+        "images": { "type": "object" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "designCode", "name", "category", "price"]
     },
     "Booking": {
       "title": "Booking",
-      "description": "An appointment booking for a photography shoot session",
+      "description": "Event photography or videography booking and date reservation",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "customerId": { "type": "string" },
-        "customerName": { "type": "string" },
-        "customerPhone": { "type": "string" },
-        "customerEmail": { "type": "string" },
-        "address": { "type": "string" },
-        "serviceId": { "type": "string" },
-        "serviceTitle": { "type": "string" },
-        "date": { "type": "string" },
-        "time": { "type": "string" },
-        "location": { "type": "string" },
-        "notes": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 160 },
+        "customerPhone": { "type": "string", "maxLength": 40 },
+        "whatsappNumber": { "type": "string", "maxLength": 40 },
+        "customerEmail": { "type": "string", "maxLength": 254 },
+        "address": { "type": "string", "maxLength": 500 },
+        "serviceId": { "type": "string", "maxLength": 128 },
+        "serviceTitle": { "type": "string", "maxLength": 200 },
+        "packageId": { "type": "string", "maxLength": 128 },
+        "packageName": { "type": "string", "maxLength": 200 },
+        "eventType": { "type": "string", "maxLength": 100 },
+        "date": { "type": "string", "maxLength": 40 },
+        "time": { "type": "string", "maxLength": 40 },
+        "location": { "type": "string", "maxLength": 400 },
+        "notes": { "type": "string", "maxLength": 3000 },
         "advancePaid": { "type": "number" },
         "totalPrice": { "type": "number" },
-        "status": { "type": "string", "enum": ["Pending", "Approved", "Completed", "Cancelled"] },
-        "photographerId": { "type": "string" },
-        "photographerName": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "gstEnabled": { "type": "boolean" },
+        "gstPercentage": { "type": "number" },
+        "gstAmount": { "type": "number" },
+        "paymentMethod": { "type": "string", "maxLength": 80 },
+        "paymentStatus": { "type": "string", "enum": ["Paid", "Pending", "Failed", "Refunded"] },
+        "dueAmount": { "type": "number" },
+        "status": {
+          "type": "string",
+          "enum": ["New", "Pending", "Contacted", "Discussion", "Confirmed", "Approved", "Completed", "Cancelled"]
+        },
+        "photographerId": { "type": "string", "maxLength": 128 },
+        "photographerName": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "customerId", "customerName", "customerPhone", "customerEmail", "address", "serviceId", "serviceTitle", "date", "time", "location", "advancePaid", "totalPrice", "status", "createdAt"]
+      "required": ["id", "customerId", "customerName", "customerPhone", "serviceId", "serviceTitle", "date", "location", "status", "createdAt"]
     },
     "Order": {
       "title": "Order",
-      "description": "A print order placed by a customer",
+      "description": "Custom print/store order with verified item & variant prices",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "customerId": { "type": "string" },
-        "customerName": { "type": "string" },
-        "customerPhone": { "type": "string" },
-        "customerEmail": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 160 },
+        "customerPhone": { "type": "string", "maxLength": 40 },
+        "customerEmail": { "type": "string", "maxLength": 254 },
+        "address": { "type": "string", "maxLength": 600 },
         "items": { "type": "array" },
-        "uploadedFileUrl": { "type": "string" },
-        "uploadedFileName": { "type": "string" },
-        "address": { "type": "string" },
+        "uploadedFileName": { "type": "string", "maxLength": 1000 },
+        "uploadedFileUrl": { "type": "string", "maxLength": 2048 },
+        "uploadedFiles": { "type": "array" },
+        "customerRemark": { "type": "string", "maxLength": 2000 },
         "subtotal": { "type": "number" },
         "gst": { "type": "number" },
         "shipping": { "type": "number" },
-        "total": { "type": "number" },
         "discount": { "type": "number" },
-        "couponCode": { "type": "string" },
-        "status": { "type": "string", "enum": ["Pending", "Accepted", "Designing", "Printing", "Ready", "Shipped", "Delivered", "Cancelled"] },
-        "paymentId": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "total": { "type": "number" },
+        "status": {
+          "type": "string",
+          "enum": ["Pending", "Accepted", "Designing", "Printing", "Ready", "Shipped", "Delivered", "Cancelled"]
+        },
+        "createdAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "customerId", "customerName", "customerPhone", "customerEmail", "items", "address", "subtotal", "gst", "shipping", "total", "discount", "status", "createdAt"]
+      "required": ["id", "customerId", "customerName", "customerPhone", "items", "address", "subtotal", "total", "status", "createdAt"]
     },
     "Expense": {
       "title": "Expense",
-      "description": "Studio operational expenses recorded by admins",
+      "description": "Studio operating expense ledger entry",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
         "category": { "type": "string", "enum": ["Rent", "Salary", "Electricity", "Equipment", "Printing Material", "Travel", "Maintenance", "Other"] },
         "amount": { "type": "number" },
-        "description": { "type": "string" },
-        "date": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "description": { "type": "string", "maxLength": 1000 },
+        "date": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "category", "amount", "description", "date", "createdAt"]
     },
     "OfferItem": {
       "title": "OfferItem",
-      "description": "A promotional coupon/discount deal",
+      "description": "Legacy storefront offer promotion item",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "description": { "type": "string" },
-        "code": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "code": { "type": "string", "maxLength": 64 },
         "discountPercent": { "type": "number" },
-        "image": { "type": "string" }
+        "image": { "type": "string", "maxLength": 2048 }
       },
-      "required": ["id", "title", "description", "code", "discountPercent", "image"]
+      "required": ["id", "title", "description", "code", "discountPercent"]
     },
-    "BlogItem": {
-      "title": "BlogItem",
-      "description": "An informational studio blog article",
+    "OfferBanner": {
+      "title": "OfferBanner",
+      "description": "Scheduled storefront promotional banner",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "excerpt": { "type": "string" },
-        "content": { "type": "string" },
-        "category": { "type": "string", "enum": ["Photography", "Printing", "News"] },
-        "image": { "type": "string" },
-        "author": { "type": "string" },
-        "date": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "subtitle": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "desktopImageUrl": { "type": "string", "maxLength": 2048 },
+        "mobileImageUrl": { "type": "string", "maxLength": 2048 },
+        "backgroundVideoUrl": { "type": "string", "maxLength": 2048 },
+        "buttonText": { "type": "string", "maxLength": 80 },
+        "buttonLink": { "type": "string", "maxLength": 300 },
+        "couponCode": { "type": "string", "maxLength": 64 },
+        "validFrom": { "type": "string", "maxLength": 64 },
+        "validUntil": { "type": "string", "maxLength": 64 },
+        "active": { "type": "boolean" },
+        "priority": { "type": "number" },
+        "autoHideAfterExpiry": { "type": "boolean" },
+        "showCountdown": { "type": "boolean" },
+        "displayPosition": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "title", "excerpt", "content", "category", "image", "author", "date"]
-    },
-    "ReviewItem": {
-      "title": "ReviewItem",
-      "description": "Customer feedback review and rating",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "customerId": { "type": "string" },
-        "customerName": { "type": "string" },
-        "rating": { "type": "number" },
-        "comment": { "type": "string" },
-        "reply": { "type": "string" },
-        "date": { "type": "string" }
-      },
-      "required": ["id", "customerId", "customerName", "rating", "comment", "date"]
-    },
-    "Inquiry": {
-      "title": "Inquiry",
-      "description": "A general inquiry from the contact form",
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "email": { "type": "string" },
-        "phone": { "type": "string" },
-        "subject": { "type": "string" },
-        "message": { "type": "string" },
-        "createdAt": { "type": "string" }
-      },
-      "required": ["name", "email", "phone", "subject", "message", "createdAt"]
+      "required": ["id", "title", "desktopImageUrl", "validFrom", "validUntil", "active"]
     },
     "Coupon": {
       "title": "Coupon",
-      "description": "Dynamic coupon engine item with usage rules, limits, validity and target applicability",
+      "description": "Dynamic discount coupon engine rule",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "code": { "type": "string" },
-        "description": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "code": { "type": "string", "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 1000 },
         "discountType": { "type": "string", "enum": ["PERCENTAGE", "FIXED"] },
         "discountValue": { "type": "number" },
         "minOrderAmount": { "type": "number" },
@@ -203,112 +342,187 @@
         "applicableOn": { "type": "string", "enum": ["ALL", "CATEGORIES", "PRODUCTS", "PRINTING", "PHOTOGRAPHY"] },
         "applicableCategoryIds": { "type": "array" },
         "applicableProductIds": { "type": "array" },
-        "validFrom": { "type": "string" },
-        "validUntil": { "type": "string" },
+        "validFrom": { "type": "string", "maxLength": 64 },
+        "validUntil": { "type": "string", "maxLength": 64 },
         "usageLimit": { "type": "number" },
         "usageLimitPerCustomer": { "type": "number" },
         "timesUsed": { "type": "number" },
         "isActive": { "type": "boolean" },
         "firstOrderOnly": { "type": "boolean" },
-        "customerSpecificEmail": { "type": "string" },
+        "customerSpecificEmail": { "type": "string", "maxLength": 254 },
         "autoApply": { "type": "boolean" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "name", "code", "discountType", "discountValue", "minOrderAmount", "maxDiscountAmount", "applicableOn", "validFrom", "validUntil", "usageLimit", "usageLimitPerCustomer", "timesUsed", "isActive", "firstOrderOnly", "createdAt"]
+      "required": ["id", "name", "code", "discountType", "discountValue", "isActive", "createdAt"]
     },
     "CouponUsage": {
       "title": "CouponUsage",
-      "description": "Record of a coupon redemption by a customer on a specific order",
+      "description": "Redemption log entry linking a coupon to an order",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "couponId": { "type": "string" },
-        "couponCode": { "type": "string" },
-        "couponName": { "type": "string" },
-        "orderId": { "type": "string" },
-        "customerId": { "type": "string" },
-        "customerEmail": { "type": "string" },
-        "customerPhone": { "type": "string" },
+        "couponId": { "type": "string", "maxLength": 128 },
+        "couponCode": { "type": "string", "maxLength": 64 },
+        "couponName": { "type": "string", "maxLength": 150 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerEmail": { "type": "string", "maxLength": 254 },
+        "customerPhone": { "type": "string", "maxLength": 40 },
         "discountAmount": { "type": "number" },
-        "usedAt": { "type": "string" }
+        "usedAt": { "type": "string", "maxLength": 64 }
       },
-      "required": ["id", "couponId", "couponCode", "orderId", "customerEmail", "discountAmount", "usedAt"]
+      "required": ["couponId", "couponCode", "orderId", "customerId", "discountAmount", "usedAt"]
+    },
+    "BlogItem": {
+      "title": "BlogItem",
+      "description": "Studio blog article",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 250 },
+        "excerpt": { "type": "string", "maxLength": 1000 },
+        "content": { "type": "string", "maxLength": 30000 },
+        "category": { "type": "string", "enum": ["Photography", "Printing", "News"] },
+        "image": { "type": "string", "maxLength": 2048 },
+        "author": { "type": "string", "maxLength": 120 },
+        "date": { "type": "string", "maxLength": 40 }
+      },
+      "required": ["id", "title", "excerpt", "content", "category", "author", "date"]
+    },
+    "ReviewItem": {
+      "title": "ReviewItem",
+      "description": "Published studio client review managed by admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 160 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 2000 },
+        "serviceCategory": { "type": "string", "maxLength": 100 },
+        "reply": { "type": "string", "maxLength": 2000 },
+        "isPublished": { "type": "boolean" },
+        "date": { "type": "string", "maxLength": 40 }
+      },
+      "required": ["id", "customerName", "rating", "comment", "date"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "Customer quote or contact enquiry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "enquiryNumber": { "type": "string", "maxLength": 64 },
+        "fullName": { "type": "string", "maxLength": 160 },
+        "name": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "whatsappNumber": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 254 },
+        "service": { "type": "string", "maxLength": 200 },
+        "packageName": { "type": "string", "maxLength": 200 },
+        "eventDate": { "type": "string", "maxLength": 40 },
+        "eventLocation": { "type": "string", "maxLength": 400 },
+        "subject": { "type": "string", "maxLength": 300 },
+        "message": { "type": "string", "maxLength": 5000 },
+        "status": { "type": "string", "enum": ["New", "Contacted", "Discussion", "Confirmed", "Completed", "Cancelled"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["phone", "message", "status", "createdAt"]
+    },
+    "OrderMessage": {
+      "title": "OrderMessage",
+      "description": "Message thread item between customer and studio admin on an order",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "maxLength": 160 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 160 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 160 },
+        "senderType": { "type": "string", "enum": ["admin", "customer"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "read": { "type": "boolean" }
+      },
+      "required": ["conversationId", "orderId", "customerId", "senderId", "senderType", "message", "createdAt", "read"]
     },
     "StudioSettings": {
       "title": "StudioSettings",
-      "description": "General settings of the studio shown in invoices and contacts",
+      "description": "Global studio branding, SEO, contact details, and invoice settings",
       "type": "object",
       "properties": {
-        "studioName": { "type": "string" },
-        "phone": { "type": "string" },
-        "email": { "type": "string" },
-        "address": { "type": "string" },
-        "gstNumber": { "type": "string" },
-        "bankName": { "type": "string" },
-        "bankAccount": { "type": "string" },
-        "bankIfsc": { "type": "string" },
-        "logoUrl": { "type": "string" }
+        "studioName": { "type": "string", "maxLength": 160 },
+        "tagline": { "type": "string", "maxLength": 250 },
+        "creativeBrand": { "type": "string", "maxLength": 160 },
+        "instagramHandle": { "type": "string", "maxLength": 100 },
+        "instagramUrl": { "type": "string", "maxLength": 500 },
+        "phone": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 254 },
+        "address": { "type": "string", "maxLength": 600 },
+        "gstNumber": { "type": "string", "maxLength": 40 },
+        "bankName": { "type": "string", "maxLength": 160 },
+        "bankAccount": { "type": "string", "maxLength": 64 },
+        "bankIfsc": { "type": "string", "maxLength": 40 },
+        "upiId": { "type": "string", "maxLength": 120 },
+        "whatsappNumber": { "type": "string", "maxLength": 40 },
+        "canonicalDomain": { "type": "string", "maxLength": 256 },
+        "seoTitle": { "type": "string", "maxLength": 250 },
+        "seoDescription": { "type": "string", "maxLength": 600 },
+        "seoKeywords": { "type": "string", "maxLength": 600 }
       },
-      "required": ["studioName", "phone", "email", "address", "gstNumber", "bankName", "bankAccount", "bankIfsc"]
+      "required": ["studioName", "phone", "email", "address"]
+    },
+    "UploadedImage": {
+      "title": "UploadedImage",
+      "description": "Metadata record of an image stored in cloud storage",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "maxLength": 2048 },
+        "path": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 80 },
+        "uploadedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["url", "path", "uploadedAt"]
+    },
+    "SystemLogItem": {
+      "title": "SystemLogItem",
+      "description": "Admin-only outbound notification or mail trigger document",
+      "type": "object",
+      "properties": {
+        "to": { "type": "string", "maxLength": 254 },
+        "subject": { "type": "string", "maxLength": 300 },
+        "status": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      }
     }
   },
   "firestore": {
-    "users/{userId}": {
-      "schema": "UserProfile",
-      "description": "User profiles collection"
-    },
-    "services/{serviceId}": {
-      "schema": "ServiceItem",
-      "description": "Studio and printing services collection"
-    },
-    "gallery/{galleryId}": {
-      "schema": "GalleryItem",
-      "description": "Portfolio gallery collection"
-    },
-    "products/{productId}": {
-      "schema": "ProductItem",
-      "description": "Product collection"
-    },
-    "bookings/{bookingId}": {
-      "schema": "Booking",
-      "description": "Bookings collection"
-    },
-    "orders/{orderId}": {
-      "schema": "Order",
-      "description": "Orders collection"
-    },
-    "expenses/{expenseId}": {
-      "schema": "Expense",
-      "description": "Expenses collection"
-    },
-    "offers/{offerId}": {
-      "schema": "OfferItem",
-      "description": "Promotional offers collection"
-    },
-    "blogs/{blogId}": {
-      "schema": "BlogItem",
-      "description": "Studio blogs collection"
-    },
-    "reviews/{reviewId}": {
-      "schema": "ReviewItem",
-      "description": "Reviews collection"
-    },
-    "inquiries/{inquiryId}": {
-      "schema": "Inquiry",
-      "description": "Customer contact form inquiries"
-    },
-    "settings/{settingId}": {
-      "schema": "StudioSettings",
-      "description": "Studio global configurations"
-    },
-    "coupons/{couponId}": {
-      "schema": "Coupon",
-      "description": "Dynamic coupon rules collection"
-    },
-    "coupon_usages/{usageId}": {
-      "schema": "CouponUsage",
-      "description": "Coupon usage log history"
-    }
+    "users/{userId}": { "schema": "UserProfile", "description": "Private user account profiles" },
+    "admins/{adminId}": { "schema": "AdminMarker", "description": "Trusted admin role marker documents" },
+    "services/{serviceId}": { "schema": "ServiceItem", "description": "Studio and printing service catalog" },
+    "packages/{packageId}": { "schema": "PackageItem", "description": "Photography and film pricing packages" },
+    "gallery/{galleryId}": { "schema": "GalleryItem", "description": "Portfolio gallery photographs" },
+    "videos/{videoId}": { "schema": "VideoItem", "description": "Portfolio showcase films and reels" },
+    "products/{productId}": { "schema": "ProductItem", "description": "Custom print and gift storefront products" },
+    "product_images/{imageId}": { "schema": "ProductImageItem", "description": "Normalized product image gallery records" },
+    "wedding_cards/{cardId}": { "schema": "WeddingCardItem", "description": "Wedding invitation card designs" },
+    "bookings/{bookingId}": { "schema": "Booking", "description": "Customer shoot bookings and reservations" },
+    "orders/{orderId}": { "schema": "Order", "description": "Custom print store orders" },
+    "expenses/{expenseId}": { "schema": "Expense", "description": "Admin-only studio expenses ledger" },
+    "offers/{offerId}": { "schema": "OfferItem", "description": "Storefront offer campaign items" },
+    "offer_banners/{bannerId}": { "schema": "OfferBanner", "description": "Scheduled website promotional banners" },
+    "coupons/{couponId}": { "schema": "Coupon", "description": "Dynamic checkout coupon definitions" },
+    "coupon_usages/{usageId}": { "schema": "CouponUsage", "description": "Coupon redemption audit records" },
+    "blogs/{blogId}": { "schema": "BlogItem", "description": "Studio blog articles" },
+    "reviews/{reviewId}": { "schema": "ReviewItem", "description": "Published client testimonials" },
+    "inquiries/{inquiryId}": { "schema": "Inquiry", "description": "Customer enquiries and quote requests" },
+    "messages/{messageId}": { "schema": "OrderMessage", "description": "Order conversation messages" },
+    "settings/{settingId}": { "schema": "StudioSettings", "description": "Studio settings backup document" },
+    "website_settings/{settingId}": { "schema": "StudioSettings", "description": "Active website settings document" },
+    "uploaded_images/{imageId}": { "schema": "UploadedImage", "description": "Uploaded asset metadata index" },
+    "notifications/{notificationId}": { "schema": "SystemLogItem", "description": "Admin notification records" },
+    "mail/{mailId}": { "schema": "SystemLogItem", "description": "Admin outbound email queue" }
   }
 }

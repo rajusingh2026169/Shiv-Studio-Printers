@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Play, Clock, Eye, Calendar, Film } from 'lucide-react';
 import { VideoItem } from '../types';
 import { generateVideoThumbnailBlob } from '../utils/videoUtils';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 
 interface VideoCardProps {
   video: VideoItem;
@@ -11,7 +12,7 @@ interface VideoCardProps {
   showAdminControls?: boolean;
 }
 
-const STOCK_THUMB_FALLBACK = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800';
+const STOCK_THUMB_FALLBACK = STUDIO_IMAGES.cinematicDrone;
 
 export const VideoCard: React.FC<VideoCardProps> = ({
   video,

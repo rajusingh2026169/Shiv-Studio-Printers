@@ -32,7 +32,7 @@ async function startServer() {
 
   const upload = multer({
     storage: storageConfig,
-    limits: { fileSize: 100 * 1024 * 1024 } // 100 MB max
+    limits: { fileSize: 200 * 1024 * 1024 } // 200 MB max
   });
 
   app.use(express.json({ limit: '50mb' }));

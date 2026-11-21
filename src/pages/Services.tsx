@@ -1,27 +1,79 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ServiceItem, VideoItem } from '../types';
-import { getVideosForCategory } from '../utils/videoService';
-import { VideoPlayer } from '../components/VideoPlayer';
+import { ServiceItem } from '../types';
+import { SERVICE_DEFINITIONS } from '../data/studioCatalog';
+import { getImageForSlugOrCategory } from '../assets/studioAssets';
 import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
-import { Camera, Printer, Layers, Film, HeartHandshake, Eye, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { SEOHead } from '../components/SEOHead';
+import { buildWhatsAppUrl } from '../components/WhatsAppButton';
+import { ArrowRight, CalendarDays, MessageCircle } from 'lucide-react';
 
 export const Services: React.FC = () => {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [filter, setFilter] = useState<string>('All');
   const [loading, setLoading] = useState(true);
-  const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
+  const [whatsappNumber, setWhatsappNumber] = useState('+917905256355');
 
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, 'services'));
-        const list = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceItem));
-        setServices(list);
-      } catch (err) {
-        console.error('Error fetching services:', err);
+        const [querySnapshot, settingsSnap] = await Promise.all([
+          getDocs(collection(db, 'services')),
+          getDoc(doc(db, 'website_settings', 'studio'))
+        ]);
+
+        if (settingsSnap.exists() && settingsSnap.data().whatsappNumber) {
+          setWhatsappNumber(settingsSnap.data().whatsappNumber);
+        }
+
+        const firestoreList = querySnapshot.docs.map(
+          (d) => ({ id: d.id, ...d.data() } as ServiceItem)
+        );
+
+        if (firestoreList.length > 0) {
+          setServices(
+            firestoreList
+              .filter((s) => s.isPublished !== false)
+              .sort((a, b) => (a.order || 99) - (b.order || 99))
+          );
+        } else {
+          setServices(
+            SERVICE_DEFINITIONS.filter((d) => d.slug !== 'maternity-baby-photography').map((def, idx) => ({
+              id: `srv_${def.slug}`,
+              slug: def.slug,
+              title: def.title,
+              category: def.category,
+              description: def.description,
+              shortDescription: def.shortDescription,
+              price: def.startingPrice,
+              startingPrice: def.startingPrice,
+              image: def.coverImage,
+              coverImage: def.coverImage,
+              gallery: def.gallery,
+              deliverables: def.deliverables,
+              order: idx + 1
+            }))
+          );
+        }
+      } catch {
+        setServices(
+          SERVICE_DEFINITIONS.map((def, idx) => ({
+            id: `srv_${def.slug}`,
+            slug: def.slug,
+            title: def.title,
+            category: def.category,
+            description: def.description,
+            shortDescription: def.shortDescription,
+            price: def.startingPrice,
+            startingPrice: def.startingPrice,
+            image: def.coverImage,
+            coverImage: def.coverImage,
+            gallery: def.gallery,
+            order: idx + 1
+          }))
+        );
       } finally {
         setLoading(false);
       }
@@ -29,259 +81,146 @@ export const Services: React.FC = () => {
     fetchServices();
   }, []);
 
-  const filteredServices = filter === 'All' 
-    ? services 
-    : services.filter(s => s.category === filter);
-
-  const handleSelectService = async (service: ServiceItem) => {
-    setSelectedService(service);
-    const serviceVideos = await getVideosForCategory('services', service.id);
-    setSelectedService(prev => prev && prev.id === service.id ? { ...prev, videos: serviceVideos } : prev);
-  };
+  const categories = ['All', 'Photography', 'Videography', 'Design', 'Printing'];
+  const filteredServices =
+    filter === 'All'
+      ? services
+      : services.filter((s) => (s.category || '').toLowerCase() === filter.toLowerCase());
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-12">
-        
-        {/* Banner Displays */}
-        {filter === 'All' && (
-          <div className="space-y-4">
-            <OfferBannerDisplay position="photography_services" />
-            <OfferBannerDisplay position="printing_services" />
-          </div>
-        )}
-        {filter === 'Photography' && <OfferBannerDisplay position="photography_services" />}
-        {filter === 'Printing' && <OfferBannerDisplay position="printing_services" />}
+    <div className="bg-[#111111] min-h-screen text-white py-16 px-4 sm:px-6 lg:px-8">
+      <SEOHead
+        title="Photography & Creative Services — SHIV STUDIO Khaga"
+        description="Explore wedding photography, pre-wedding, birthday, engagement, maternity, baby, event, cinematic videography, drone photography, album design, graphic design, video editing & custom frames."
+        canonicalPath="/services"
+      />
 
-        {/* Page Header */}
-        <div className="text-center space-y-4">
-          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider">
-            Premium Studio Portfolios & High Volume Printing Press
-          </span>
-          <h1 className="text-3xl sm:text-5xl font-sans font-bold tracking-tight text-white">
-            Our Photography & Printing Services
+      <div className="max-w-7xl mx-auto space-y-12">
+        <OfferBannerDisplay position="photography_services" />
+
+        <div className="text-center max-w-3xl mx-auto space-y-4">
+          <p className="text-xs uppercase tracking-[0.25em] text-[#D4AF37] font-semibold">
+            Creative Disciplines
+          </p>
+          <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-semibold text-white">
+            Photography, Cinema &amp; Design Services
           </h1>
-          <p className="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
-            Choose from cinematic outdoor photo sessions, baby portfolio setups with sanitized heated toys, or digital/offset high-resolution printing for corporations.
+          <p className="text-sm sm:text-base text-neutral-400 leading-relaxed">
+            Dedicated camera crews, post-production editors, and custom print specialists serving Khaga, Fatehpur, and destinations across Uttar Pradesh.
           </p>
         </div>
 
-        {/* Categories Tab selector */}
-        <div className="flex justify-center gap-3 border-b border-slate-900 pb-6">
-          <button
-            onClick={() => setFilter('All')}
-            className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-              filter === 'All' 
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/10' 
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            All Services
-          </button>
-          <button
-            onClick={() => setFilter('Photography')}
-            className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 ${
-              filter === 'Photography' 
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/10' 
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Camera className="h-4 w-4" />
-            <span>Photography & Shoots</span>
-          </button>
-          <button
-            onClick={() => setFilter('Printing')}
-            className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 ${
-              filter === 'Printing' 
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/10' 
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Printer className="h-4 w-4" />
-            <span>Printing Press & Album Design</span>
-          </button>
+        <div className="flex flex-wrap justify-center gap-2 border-b border-white/10 pb-6">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setFilter(cat)}
+              className={`px-5 py-2.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                filter === cat
+                  ? 'bg-[#D4AF37] text-[#111111] font-semibold'
+                  : 'bg-[#1A1A1A] text-neutral-300 hover:text-white border border-white/10'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
 
-        {/* Loading skeleton */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[1, 2, 3].map((n) => (
-              <div key={n} className="bg-slate-900 rounded-2xl h-96 animate-pulse border border-slate-800"></div>
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <div key={n} className="bg-[#1A1A1A] rounded-2xl h-96 animate-pulse border border-white/10" />
             ))}
-          </div>
-        ) : services.length === 0 ? (
-          <div className="text-center py-20 bg-slate-900 rounded-3xl border border-slate-800 p-8 space-y-6 max-w-xl mx-auto">
-            <div className="mx-auto w-16 h-16 bg-amber-500/10 border border-amber-500/25 rounded-full flex items-center justify-center">
-              <Camera className="h-8 w-8 text-amber-500" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold text-white">No Services Available</h3>
-              <p className="text-sm text-slate-400">Our photography and printing packages are currently being updated by the administration.</p>
-            </div>
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center space-x-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-5 py-3 rounded-xl text-xs sm:text-sm transition-all animate-bounce"
-            >
-              <span>Add New Service (Admin)</span>
-            </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {filteredServices.map((service) => (
-              <div 
-                key={service.id} 
-                className="group bg-slate-900 border border-slate-800/80 rounded-2xl overflow-hidden hover:border-slate-700 transition-all duration-300 shadow-xl flex flex-col justify-between"
-              >
-                <div>
-                  <div className="relative aspect-video overflow-hidden">
-                    <img 
-                      src={service.image} 
-                      alt={service.title} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                    />
-                    <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-md border border-slate-800 px-3 py-1 rounded-full text-xxs font-bold text-amber-500 uppercase font-mono">
-                      {service.category}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredServices.map((service) => {
+              const inferredSlug =
+                service.slug ||
+                service.id.replace(/^srv_/, '') ||
+                service.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+              const detailRoute =
+                inferredSlug === 'photo-frames' || inferredSlug === 'customized-gifts'
+                  ? '/store'
+                  : `/services/${inferredSlug}`;
+              const displayPrice = service.startingPrice ?? service.price ?? 0;
+
+              return (
+                <div
+                  key={service.id}
+                  className="group bg-[#1A1A1A] border border-white/10 hover:border-[#D4AF37]/40 rounded-2xl overflow-hidden flex flex-col justify-between transition-colors"
+                >
+                  <div>
+                    <Link to={detailRoute} className="block relative aspect-[4/3] overflow-hidden bg-[#111111]">
+                      <img
+                        src={service.image || service.coverImage || getImageForSlugOrCategory(service.title)}
+                        alt={service.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    </Link>
+
+                    <div className="p-6 space-y-2.5">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-[#D4AF37] font-semibold">
+                        {service.category}
+                      </p>
+                      <Link to={detailRoute}>
+                        <h2 className="font-display text-2xl font-semibold text-white group-hover:text-[#D4AF37] transition-colors">
+                          {service.title}
+                        </h2>
+                      </Link>
+                      <p className="text-neutral-400 text-xs sm:text-sm leading-relaxed line-clamp-3">
+                        {service.shortDescription || service.description}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="p-6 space-y-3">
-                    <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors">
-                      {service.title}
-                    </h3>
-                    <p className="text-slate-400 text-xs sm:text-sm leading-relaxed line-clamp-3">
-                      {service.description}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-6 pt-2 border-t border-slate-800/50 flex flex-col space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xxs text-slate-500 uppercase font-mono">Package Starting At</p>
-                      <p className="text-xl font-extrabold text-amber-400">₹{service.price.toLocaleString('en-IN')}</p>
+                  <div className="p-6 pt-3 border-t border-white/10 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] text-neutral-500 uppercase tracking-wider">Starting Price</p>
+                        <p className="text-lg font-bold text-[#D4AF37] tabular-nums">
+                          ₹{Number(displayPrice).toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                      <Link
+                        to={detailRoute}
+                        className="text-xs font-semibold text-white hover:text-[#D4AF37] inline-flex items-center gap-1"
+                      >
+                        <span>View Page</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
                     </div>
-                    <button 
-                      onClick={() => handleSelectService(service)}
-                      className="px-3.5 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center space-x-1"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                      <span>Details & Gallery</span>
-                    </button>
-                  </div>
 
-                  <Link
-                    to={`/booking?service=${service.id}`}
-                    className="w-full py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-center text-xs rounded-xl transition-colors block"
-                  >
-                    Configure & Book Now
-                  </Link>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Link
+                        to={`/booking?service=${encodeURIComponent(service.id)}`}
+                        className="py-2.5 bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] font-semibold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        <span>Book Now</span>
+                      </Link>
+                      <a
+                        href={buildWhatsAppUrl(
+                          whatsappNumber,
+                          `Hello SHIV STUDIO, I would like to enquire about ${service.title}.`
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-2.5 bg-[#111111] hover:bg-white/10 border border-white/15 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5 text-[#D4AF37]" />
+                        <span>WhatsApp</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
-
-      {/* Service Details & Gallery Modal */}
-      {selectedService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
-          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 max-h-[90vh] overflow-y-auto">
-            <button 
-              onClick={() => setSelectedService(null)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              ✕
-            </button>
-
-            <div className="space-y-6">
-              <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 font-bold text-xxs uppercase tracking-wider rounded-md border border-amber-500/20">
-                {selectedService.category} Service Detail
-              </span>
-
-              <h2 className="text-xl sm:text-2xl font-bold text-white">{selectedService.title}</h2>
-              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">{selectedService.description}</p>
-
-              {/* Package Details Specs */}
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <p className="text-slate-500 uppercase font-mono">Service Deliverables</p>
-                  <ul className="list-disc pl-4 text-slate-300 mt-2 space-y-1">
-                    <li>Full Resolution Soft Backups</li>
-                    <li>Professional Color Grading</li>
-                    <li>Secure Download Vault access</li>
-                    <li>Taxes and GST inclusive</li>
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-slate-500 uppercase font-mono">Setup Information</p>
-                  <p className="text-slate-300 mt-2">Khaga Studio session, heavy-backdrop frames, custom client requirements matched.</p>
-                </div>
-              </div>
-
-              {/* Service Inner Gallery */}
-              {selectedService.gallery && selectedService.gallery.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono flex items-center space-x-1">
-                    <ImageIcon className="h-3.5 w-3.5" />
-                    <span>Shoot Work Gallery ({selectedService.gallery.length})</span>
-                  </h4>
-                  <div className="grid grid-cols-3 gap-2">
-                    {selectedService.gallery.map((imgUrl, i) => (
-                      <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
-                        <img 
-                          src={imgUrl} 
-                          alt="Deliverable gallery sample" 
-                          className="w-full h-full object-cover" 
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Service Inner Videos */}
-              {selectedService.videos && selectedService.videos.length > 0 && (
-                <div className="space-y-3 pt-2 border-t border-slate-800">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500 font-mono flex items-center space-x-1">
-                    <Film className="h-3.5 w-3.5" />
-                    <span>Service Video Teasers ({selectedService.videos.length})</span>
-                  </h4>
-                  <div className="space-y-3">
-                    {selectedService.videos.map((vid) => (
-                      <div key={vid.id} className="space-y-1">
-                        <VideoPlayer
-                          src={vid.videoUrl}
-                          poster={vid.thumbnailUrl}
-                          title={vid.title}
-                          description={vid.description}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-                <div>
-                  <p className="text-xxs text-slate-500 uppercase font-mono">Total Package Cost</p>
-                  <p className="text-xl font-bold text-amber-400">₹{selectedService.price.toLocaleString('en-IN')}</p>
-                </div>
-                <Link
-                  to={`/booking?service=${selectedService.id}`}
-                  onClick={() => setSelectedService(null)}
-                  className="px-6 py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-all"
-                >
-                  Proceed with Booking
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

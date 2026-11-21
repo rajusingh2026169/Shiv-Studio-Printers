@@ -3,9 +3,12 @@ import { Link } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { BlogItem } from '../types';
+import { SEOHead } from '../components/SEOHead';
+import { useAuth } from '../context/AuthContext';
 import { BookOpen, User, Calendar, Tag, ChevronRight } from 'lucide-react';
 
 export const Blog: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [blogs, setBlogs] = useState<BlogItem[]>([]);
   const [selectedBlog, setSelectedBlog] = useState<BlogItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,19 +28,23 @@ export const Blog: React.FC = () => {
   }, []);
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-[#111111] min-h-screen text-white py-16 px-4 sm:px-6 lg:px-8 font-sans">
+      <SEOHead
+        title="Studio Journal & Guides — SHIV STUDIO"
+        description="Wedding photography poses, lighting notes, album finishes, and framing guides from SHIV STUDIO in Khaga, Fatehpur."
+      />
       <div className="max-w-7xl mx-auto space-y-12">
         
         {/* Page Header */}
         <div className="text-center space-y-4">
-          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider">
-            SEO Optimised Studio Insights
-          </span>
-          <h1 className="text-3xl sm:text-5xl font-sans font-bold text-white tracking-tight">
-            The Shiv Studio Blog & Tips
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#D4AF37]">
+            Studio Insights & Guides
+          </p>
+          <h1 className="font-serif text-3xl sm:text-5xl font-semibold text-white tracking-tight">
+            The SHIV STUDIO Journal
           </h1>
-          <p className="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
-            Professional wedding photography poses, color depth calibrations, and paper texture guides written by our senior directors and print technicians.
+          <p className="max-w-2xl mx-auto text-neutral-400 text-sm sm:text-base leading-relaxed">
+            Wedding photography tips, color-calibrated printing advice, and album material guides written by our studio team.
           </p>
         </div>
 
@@ -45,17 +52,23 @@ export const Blog: React.FC = () => {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {[1, 2].map((n) => (
-              <div key={n} className="bg-slate-900 rounded-3xl h-96 animate-pulse border border-slate-800"></div>
+              <div key={n} className="bg-[#1A1A1A] rounded-3xl h-96 border border-white/10"></div>
             ))}
           </div>
         ) : blogs.length === 0 ? (
-          <div className="text-center py-16 bg-slate-900 rounded-3xl border border-slate-800 p-8 space-y-4 max-w-xl mx-auto w-full">
-            <BookOpen className="h-8 w-8 text-amber-500 mx-auto" />
-            <h3 className="text-lg font-bold text-white">No Blog Articles Available</h3>
-            <p className="text-xs text-slate-400">Our senior designers and print technicians are currently preparing our latest guides.</p>
-            <Link to="/dashboard/admin" className="inline-block bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs hover:bg-amber-600 transition-all">
-              Add New Post (Admin)
-            </Link>
+          <div className="text-center py-16 bg-[#1A1A1A] rounded-3xl border border-white/10 p-8 space-y-4 max-w-xl mx-auto w-full">
+            <BookOpen className="h-8 w-8 text-[#D4AF37] mx-auto" />
+            <h3 className="text-lg font-bold text-white">No Articles Published Yet</h3>
+            <p className="text-xs text-neutral-400">Photography guides and studio updates will appear here once published.</p>
+            {isAdmin() ? (
+              <Link to="/admin/dashboard" className="inline-block bg-[#D4AF37] text-[#111111] font-bold px-4 py-2 rounded-xl text-xs hover:bg-[#c5a028] transition-colors">
+                Publish Article (Admin)
+              </Link>
+            ) : (
+              <Link to="/contact" className="inline-block bg-[#D4AF37] text-[#111111] font-bold px-4 py-2 rounded-xl text-xs hover:bg-[#c5a028] transition-colors">
+                Ask Our Studio Team
+              </Link>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

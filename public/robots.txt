@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /customer/
+Disallow: /cart
+
+Sitemap: https://shiv-studio.vercel.app/sitemap.xml

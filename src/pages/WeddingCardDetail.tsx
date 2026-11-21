@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where, limit, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { WeddingCardItem } from '../types';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { SEOHead } from '../components/SEOHead';
 import { 
   ArrowLeft, 
   Sparkles, 
@@ -144,7 +146,11 @@ export const WeddingCardDetail: React.FC = () => {
   const totalEstimate = card.price * (quoteQuantity || card.minOrderQuantity || 100);
 
   return (
-    <div className="bg-slate-950 text-slate-100 min-h-screen pb-20 font-sans">
+    <div className="bg-[#111111] text-white min-h-screen pb-20 font-sans">
+      <SEOHead
+        title={`${card.name} (#${card.designCode}) — Wedding Cards | SHIV STUDIO`}
+        description={`${card.name} (${card.category}) wedding invitation at ₹${card.price}/card. Minimum quantity ${card.minOrderQuantity} pieces at SHIV STUDIO Khaga.`}
+      />
       
       {/* Breadcrumb Navigation */}
       <div className="bg-slate-900/60 border-b border-slate-800/80 py-3 px-4 sm:px-6 lg:px-8">
@@ -420,7 +426,7 @@ export const WeddingCardDetail: React.FC = () => {
                   className="group bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl overflow-hidden shadow-lg transition-all p-3"
                 >
                   <img
-                    src={rel.mainImage || rel.images?.front || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800'}
+                    src={rel.mainImage || rel.images?.front || STUDIO_IMAGES.luxuryAlbumFrame}
                     alt={rel.name}
                     className="w-full aspect-[4/3] object-cover rounded-xl group-hover:scale-105 transition-transform duration-300"
                     referrerPolicy="no-referrer"
@@ -492,9 +498,27 @@ export const WeddingCardDetail: React.FC = () => {
               </div>
             ) : (
               <form 
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  setQuoteSubmitted(true);
+                  try {
+                    await addDoc(collection(db, 'inquiries'), {
+                      type: 'Wedding Card Quote',
+                      fullName: quoteName.trim(),
+                      customerName: quoteName.trim(),
+                      phone: quotePhone.trim(),
+                      customerPhone: quotePhone.trim(),
+                      designCode: card.designCode,
+                      cardName: card.name,
+                      cardPrice: card.price,
+                      quantity: quoteQuantity,
+                      message: `Quote Request for Card #${card.designCode} (${card.name}) - Qty: ${quoteQuantity}`,
+                      status: 'New',
+                      createdAt: new Date().toISOString()
+                    });
+                    setQuoteSubmitted(true);
+                  } catch (err) {
+                    console.error('Error submitting card quote:', err);
+                  }
                 }} 
                 className="p-6 space-y-4"
               >

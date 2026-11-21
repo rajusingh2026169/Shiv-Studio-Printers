@@ -1,43 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
+import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { db, seedDatabaseIfNeeded } from '../../firebase';
 import { Order, Booking, ProductItem, Expense, ServiceItem, GalleryItem, OfferItem, ReviewItem, UserProfile, BlogItem } from '../../types';
+import { STUDIO_IMAGES } from '../../assets/studioAssets';
+import { buildWhatsAppUrl } from '../../components/WhatsAppButton';
 import { 
   TrendingUp, 
   ShoppingBag, 
   CalendarDays, 
-  IndianRupee, 
   Layers, 
   Trash2, 
   Plus, 
   Edit3, 
-  CheckCircle, 
   AlertTriangle,
-  X,
   FileText,
   Camera,
   Globe,
   Tag,
   MessageSquare,
   Users,
-  HelpCircle,
   Inbox,
   Image as ImageIcon,
-  Check,
   UserCheck,
-  MapPin,
-  Clock,
-  Phone,
-  Mail,
   Sliders,
   DollarSign,
   Download,
   FolderArchive,
   Film,
   Gift,
-  RefreshCw,
-  Loader2
+  Loader2,
+  Package,
+  LogOut,
+  MessageCircle
 } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
 import { OrderMessageModal } from '../../components/OrderMessageModal';
@@ -48,6 +44,8 @@ import { AdminCouponManager } from '../../components/AdminCouponManager';
 import { AdminWeddingCardManager } from '../../components/AdminWeddingCardManager';
 import { AdminVideoManager } from '../../components/AdminVideoManager';
 import { AdminOfferBannerManager } from '../../components/AdminOfferBannerManager';
+import { AdminPackageManager } from '../../components/AdminPackageManager';
+import { AdminProfilePanel } from '../../components/AdminProfilePanel';
 import { useAuth } from '../../context/AuthContext';
 import { 
   saveProductImages, 
@@ -56,11 +54,12 @@ import {
   autoMigrateExistingProducts 
 } from '../../utils/productService';
 
-// Modular Feature Flag: Set to true to re-enable Video Upload & Management in Admin Panel
-const ENABLE_VIDEO_MANAGEMENT = false;
+// Modular Feature Flag: Video Upload & Management enabled
+const ENABLE_VIDEO_MANAGEMENT = true;
 
 export const AdminDashboard: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -147,15 +146,19 @@ export const AdminDashboard: React.FC = () => {
   const [isSavingBlog, setIsSavingBlog] = useState(false);
   
   const [activeTab, setActiveTab] = useState<
-    'analytics' | 'website' | 'services' | 'products' | 'wedding-cards' | 'bookings' | 'orders' | 'expenses' | 'gallery' | 'videos' | 'offers' | 'offer-banners' | 'reviews' | 'customers' | 'inquiries' | 'blogs'
+    'analytics' | 'website' | 'services' | 'packages' | 'products' | 'wedding-cards' | 'bookings' | 'orders' | 'expenses' | 'gallery' | 'videos' | 'offers' | 'offer-banners' | 'reviews' | 'customers' | 'inquiries' | 'blogs' | 'profile'
   >('analytics');
 
   // Website Settings State
   const [settings, setSettings] = useState<any>({
-    studioName: 'Shiv Studio & Printers',
+    studioName: 'SHIV STUDIO',
+    tagline: 'Capturing Moments, Creating Memories.',
+    creativeBrand: 'Arvind Creation',
+    instagramHandle: 'Shiv_photography_officel',
+    instagramUrl: 'https://www.instagram.com/Shiv_photography_officel/',
     phone: '+91 7905256355, +91 8765706396',
     email: 'shivsharan52796@gmail.com',
-    address: 'Kishanpur Road, Over Bridge ke Niche, Khaga, Fatehpur, Uttar Pradesh, India',
+    address: 'Kishanpur Road Over Bridge, Khaga, Fatehpur, Uttar Pradesh, India – 212655',
     officeHours: 'Monday - Sunday: 09:00 AM - 09:00 PM',
     gstNumber: '09AAAAA1111A1Z1',
     bankName: 'State Bank of India',
@@ -163,13 +166,19 @@ export const AdminDashboard: React.FC = () => {
     bankIfsc: 'SBIN0001234',
     upiId: 'shivsharan52796@okaxis',
     whatsappNumber: '+917905256355',
-    googleMapUrl: 'https://maps.google.com/maps?q=Kishanpur%20Road,%20Khaga,%20Fatehpur,%20Uttar%20Pradesh&t=&z=15&ie=UTF8&iwloc=&output=embed',
-    heroTitle: 'Capturing Memories, Printing Excellence.',
-    heroSubtitle: 'Khaga\'s premier industrial-scale commercial photo studio and fine-art luxury printing press.',
-    welcomeText: 'Welcome to Shiv Studio & Printers. We deliver top-tier photography and print deliverables with certified materials and state-of-the-art equipment.',
-    aboutTitle: 'Our Heritage in Fatehpur',
-    aboutDescription: 'Established over a decade ago in the commercial heart of Khaga, Fatehpur, Shiv Studio & Printers has been the absolute benchmark for bespoke pre-wedding masterworks, official event coverage, and premium wedding album creations.',
-    footerText: 'Copyright © Shiv Studio & Printers. All Rights Reserved.'
+    googleMapUrl: 'https://maps.google.com/maps?q=Kishanpur%20Road,%20Khaga,%20Fatehpur,%20Uttar%20Pradesh%20212655&t=&z=15&ie=UTF8&iwloc=&output=embed',
+    googleBusinessUrl: 'https://maps.google.com/?q=Shiv+Studio+Khaga+Fatehpur+212655',
+    heroTitle: 'WE CAPTURE YOUR BEST MOMENTS.',
+    heroSubtitle: 'Turning Your Precious Moments Into Timeless Memories.',
+    welcomeText: 'Capturing Moments, Creating Memories.',
+    aboutTitle: 'Crafting Timeless Visual Legacy in Khaga, Fatehpur',
+    aboutDescription: 'SHIV STUDIO is an established photography, cinematic filmmaking, album design, and custom print house in Khaga, Fatehpur. Together with our creative division Arvind Creation, we pair calibrated full-frame cameras and aerial cinema rigs with museum-grade photo frames and bespoke albums.',
+    footerText: '© SHIV STUDIO — Creative Brand: Arvind Creation. All Rights Reserved.',
+    seoTitle: 'SHIV STUDIO | Capturing Moments, Creating Memories — Khaga, Fatehpur',
+    seoDescription: 'SHIV STUDIO (Arvind Creation) — Wedding Photography, Pre-Wedding Shoots, Cinematic Videography, Drone Coverage, Custom Photo Frames & Albums in Khaga, Fatehpur UP 212655.',
+    seoKeywords: 'Shiv Studio, Khaga, Fatehpur, Wedding Photography, Pre-Wedding, Cinematic Video, Drone, Photo Frames, Album Design, Arvind Creation',
+    canonicalDomain: 'https://shiv-studio.vercel.app',
+    instagramGallery: []
   });
 
   // Invoice Receipt Modal
@@ -231,10 +240,14 @@ export const AdminDashboard: React.FC = () => {
   // Service CRUD fields
   const [editingService, setEditingService] = useState<ServiceItem | null>(null);
   const [sTitle, setSTitle] = useState('');
-  const [sCategory, setSCategory] = useState<'Photography' | 'Printing'>('Photography');
+  const [sSlug, setSSlug] = useState('');
+  const [sCategory, setSCategory] = useState<'Photography' | 'Printing' | 'Videography' | 'Design' | string>('Photography');
+  const [sShortDescription, setSShortDescription] = useState('');
   const [sDescription, setSDescription] = useState('');
+  const [sDeliverablesText, setSDeliverablesText] = useState('');
   const [sPrice, setSPrice] = useState(0);
   const [sImage, setSImage] = useState('');
+  const [sIsPublished, setSIsPublished] = useState<boolean>(true);
   const [sEnableGst, setSEnableGst] = useState<boolean>(true);
   const [sGstPercent, setSGstPercent] = useState<number>(18);
   const [sGstIncludedInPrice, setSGstIncludedInPrice] = useState<boolean>(true);
@@ -242,7 +255,7 @@ export const AdminDashboard: React.FC = () => {
   // Gallery CRUD fields
   const [editingGallery, setEditingGallery] = useState<GalleryItem | null>(null);
   const [gTitle, setGTitle] = useState('');
-  const [gCategory, setGCategory] = useState<'Wedding' | 'Pre Wedding' | 'Baby' | 'Events' | 'Birthday' | 'Drone' | 'Albums' | 'Videos'>('Wedding');
+  const [gCategory, setGCategory] = useState<string>('Wedding');
   const [gImageUrl, setGImageUrl] = useState('');
   const [gIsFeatured, setGIsFeatured] = useState(false);
 
@@ -260,6 +273,8 @@ export const AdminDashboard: React.FC = () => {
   const [rRating, setRRating] = useState(5);
   const [rComment, setRComment] = useState('');
   const [rReply, setRReply] = useState('');
+  const [rServiceCategory, setRServiceCategory] = useState('Wedding Photography');
+  const [rIsPublished, setRIsPublished] = useState(true);
 
   // Blog CRUD fields
   const [blogs, setBlogs] = useState<BlogItem[]>([]);
@@ -281,6 +296,7 @@ export const AdminDashboard: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
+    seedDatabaseIfNeeded().catch(() => {});
     autoMigrateExistingProducts().catch(err => console.error(err));
     fetchDashboardData();
 
@@ -373,6 +389,9 @@ export const AdminDashboard: React.FC = () => {
   const netProfit = totalSales - totalExpenses;
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
   const completedOrders = orders.filter(o => o.status === 'Delivered').length;
+  const newInquiriesCount = inquiries.filter(i => !i.status || i.status === 'New' || i.status === 'Pending').length;
+  const confirmedBookingsCount = bookings.filter(b => b.status === 'Confirmed' || b.status === 'Approved').length;
+  const completedBookingsCount = bookings.filter(b => b.status === 'Completed').length;
 
   // Save Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -869,14 +888,31 @@ export const AdminDashboard: React.FC = () => {
     setIsSavingService(true);
     try {
       const servId = editingService ? editingService.id : `serv_${Math.floor(Math.random() * 100000)}`;
+      const generatedSlug =
+        (sSlug || sTitle)
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') || servId;
+      const deliverablesList = sDeliverablesText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
       const servData: ServiceItem = {
         id: servId,
+        slug: generatedSlug,
         title: sTitle,
         category: sCategory,
+        shortDescription: sShortDescription.trim(),
         description: sDescription,
         price: Number(sPrice),
-        image: sImage || 'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&q=80&w=400',
-        gallery: editingService ? editingService.gallery : [],
+        startingPrice: Number(sPrice),
+        image: sImage || STUDIO_IMAGES.heroWedding,
+        coverImage: sImage || STUDIO_IMAGES.heroWedding,
+        gallery: editingService?.gallery || [],
+        deliverables: deliverablesList,
+        isPublished: sIsPublished,
         enableGst: sEnableGst,
         gstPercent: Number(sGstPercent),
         gstIncludedInPrice: sGstIncludedInPrice
@@ -885,11 +921,9 @@ export const AdminDashboard: React.FC = () => {
       await setDoc(doc(db, 'services', servId), servData);
       setShowServiceModal(false);
       setEditingService(null);
-      alert('Service category saved successfully.');
       fetchDashboardData();
     } catch (err) {
       console.error(err);
-      alert('Error saving service.');
     } finally {
       setIsSavingService(false);
     }
@@ -902,7 +936,6 @@ export const AdminDashboard: React.FC = () => {
       async () => {
         try {
           await deleteDoc(doc(db, 'services', servId));
-          alert('Service removed successfully.');
           fetchDashboardData();
         } catch (err) {
           console.error(err);
@@ -921,18 +954,18 @@ export const AdminDashboard: React.FC = () => {
         id: gId,
         title: gTitle,
         category: gCategory,
-        imageUrl: gImageUrl || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=400',
-        isFeatured: gIsFeatured
+        imageUrl: gImageUrl || STUDIO_IMAGES.heroWedding,
+        mediaType: 'photo',
+        isFeatured: gIsFeatured,
+        createdAt: editingGallery?.createdAt || new Date().toISOString()
       };
 
       await setDoc(doc(db, 'gallery', gId), gData);
       setShowGalleryModal(false);
       setEditingGallery(null);
-      alert('Gallery item published.');
       fetchDashboardData();
     } catch (err) {
       console.error(err);
-      alert('Error saving gallery item.');
     } finally {
       setIsSavingGallery(false);
     }
@@ -966,17 +999,15 @@ export const AdminDashboard: React.FC = () => {
         description: oDescription,
         code: oCode.toUpperCase().replace(/\s+/g, ''),
         discountPercent: Number(oDiscountPercent),
-        image: oImage || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&q=80&w=400'
+        image: oImage || STUDIO_IMAGES.luxuryAlbumFrame
       };
 
       await setDoc(doc(db, 'offers', offerId), offerData);
       setShowOfferModal(false);
       setEditingOffer(null);
-      alert('Coupon code & campaign details saved.');
       fetchDashboardData();
     } catch (err) {
       console.error(err);
-      alert('Error saving offer.');
     } finally {
       setIsSavingOffer(false);
     }
@@ -989,7 +1020,6 @@ export const AdminDashboard: React.FC = () => {
       async () => {
         try {
           await deleteDoc(doc(db, 'offers', offId));
-          alert('Promotional coupon removed successfully.');
           fetchDashboardData();
         } catch (err) {
           console.error(err);
@@ -1010,18 +1040,18 @@ export const AdminDashboard: React.FC = () => {
         customerName: rCustomerName || 'Anonymous Client',
         rating: Number(rRating),
         comment: rComment,
-        reply: rReply || undefined,
+        serviceCategory: rServiceCategory || 'Wedding Photography',
+        ...(rReply.trim() ? { reply: rReply.trim() } : {}),
+        isPublished: rIsPublished,
         date: editingReview ? editingReview.date : new Date().toISOString().split('T')[0]
       };
 
       await setDoc(doc(db, 'reviews', revId), revData);
       setShowReviewModal(false);
       setEditingReview(null);
-      alert('Client response and feedback updated.');
       fetchDashboardData();
     } catch (err) {
       console.error(err);
-      alert('Error saving review.');
     } finally {
       setIsSavingReview(false);
     }
@@ -1034,7 +1064,6 @@ export const AdminDashboard: React.FC = () => {
       async () => {
         try {
           await deleteDoc(doc(db, 'reviews', revId));
-          alert('Review testimonial removed successfully.');
           fetchDashboardData();
         } catch (err) {
           console.error(err);
@@ -1055,8 +1084,8 @@ export const AdminDashboard: React.FC = () => {
         excerpt: bExcerpt,
         content: bContent,
         category: bCategory,
-        image: bImage || 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=600',
-        author: bAuthor || 'Shiv Studio Team',
+        image: bImage || STUDIO_IMAGES.studioPortrait,
+        author: bAuthor || 'SHIV STUDIO Team',
         date: editingBlog ? editingBlog.date : new Date().toISOString().split('T')[0]
       };
       await setDoc(doc(db, 'blogs', blogId), blogData);
@@ -1146,6 +1175,18 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // Inquiry management
+  const handleUpdateInquiryStatus = async (inqId: string, status: string) => {
+    try {
+      await updateDoc(doc(db, 'inquiries', inqId), {
+        status,
+        updatedAt: new Date().toISOString()
+      });
+      setInquiries((prev) => prev.map((item) => (item.id === inqId ? { ...item, status } : item)));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleDeleteInquiry = async (inqId: string) => {
     triggerConfirm(
       'Delete Customer Inquiry',
@@ -1153,7 +1194,6 @@ export const AdminDashboard: React.FC = () => {
       async () => {
         try {
           await deleteDoc(doc(db, 'inquiries', inqId));
-          alert('Inquiry deleted from inbox successfully.');
           fetchDashboardData();
         } catch (err) {
           console.error(err);
@@ -1248,10 +1288,14 @@ export const AdminDashboard: React.FC = () => {
   const startEditService = (s: ServiceItem) => {
     setEditingService(s);
     setSTitle(s.title);
+    setSSlug(s.slug || '');
     setSCategory(s.category);
-    setSPrice(s.price);
+    setSPrice(s.startingPrice ?? s.price);
+    setSShortDescription(s.shortDescription || '');
     setSDescription(s.description);
-    setSImage(s.image);
+    setSDeliverablesText(Array.isArray(s.deliverables) ? s.deliverables.join('\n') : '');
+    setSImage(s.coverImage || s.image);
+    setSIsPublished(s.isPublished !== false);
     setSEnableGst(s.enableGst !== false);
     setSGstPercent(s.gstPercent !== undefined ? s.gstPercent : 18);
     setSGstIncludedInPrice(s.gstIncludedInPrice !== false);
@@ -1283,51 +1327,80 @@ export const AdminDashboard: React.FC = () => {
     setRRating(r.rating);
     setRComment(r.comment);
     setRReply(r.reply || '');
+    setRServiceCategory(r.serviceCategory || 'Wedding Photography');
+    setRIsPublished(r.isPublished !== false);
+    setShowReviewModal(true);
+  };
+
+  const openAddReviewModal = () => {
+    setEditingReview(null);
+    setRCustomerName('');
+    setRRating(5);
+    setRComment('');
+    setRReply('');
+    setRServiceCategory('Wedding Photography');
+    setRIsPublished(true);
     setShowReviewModal(true);
   };
 
   // Sidebar dynamic menu definition
   const menuItems = [
     { key: 'analytics', label: 'Analytics Panel', icon: TrendingUp },
-    { key: 'website', label: 'Website Home Settings', icon: Globe },
-    { key: 'services', label: 'Services Catalog', icon: Camera },
-    { key: 'products', label: 'Product Store', icon: ShoppingBag },
-    { key: 'wedding-cards', label: 'Wedding Cards', icon: Layers },
     { key: 'bookings', label: 'Shoot Bookings', icon: CalendarDays },
-    { key: 'orders', label: 'Print Job Pipeline', icon: Sliders },
-    { key: 'expenses', label: 'Expense Ledger', icon: DollarSign },
-    { key: 'gallery', label: 'Gallery Showcase', icon: ImageIcon },
+    { key: 'inquiries', label: 'Client Enquiries', icon: Inbox },
+    { key: 'packages', label: 'Packages & Pricing', icon: Package },
+    { key: 'services', label: 'Services Catalog', icon: Camera },
+    { key: 'gallery', label: 'Portfolio Showcase', icon: ImageIcon },
     ...(ENABLE_VIDEO_MANAGEMENT ? [{ key: 'videos', label: 'Video Studio Vault', icon: Film }] : []),
-    { key: 'blogs', label: 'Blog Articles', icon: FileText },
+    { key: 'products', label: 'Frames & Gifts Store', icon: ShoppingBag },
+    { key: 'orders', label: 'Print Job Pipeline', icon: Sliders },
+    { key: 'wedding-cards', label: 'Wedding Cards', icon: Layers },
+    { key: 'reviews', label: 'Testimonials & Reviews', icon: MessageSquare },
+    { key: 'website', label: 'Website, SEO & IG', icon: Globe },
+    { key: 'blogs', label: 'Journal Articles', icon: FileText },
     { key: 'offers', label: 'Coupons & Deals', icon: Tag },
     { key: 'offer-banners', label: 'Offer Banners', icon: Gift },
-    { key: 'reviews', label: 'Reviews Reply', icon: MessageSquare },
+    { key: 'expenses', label: 'Expense Ledger', icon: DollarSign },
     { key: 'customers', label: 'Customer Database', icon: Users },
-    { key: 'inquiries', label: 'Client Inboxes', icon: Inbox }
+    { key: 'profile', label: 'Admin Profile', icon: UserCheck }
   ];
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-10 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-[#111111] min-h-screen text-white py-10 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Banner Title Header */}
-        <div className="border-b border-slate-900 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="border-b border-white/10 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-sans font-bold text-white tracking-tight flex items-center gap-2">
-              <TrendingUp className="h-7 w-7 text-amber-500" />
-              <span>{settings.studioName} Studio Hub</span>
+            <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-white tracking-tight flex items-center gap-2">
+              <TrendingUp className="h-7 w-7 text-[#D4AF37]" />
+              <span>{settings.studioName || 'SHIV STUDIO'} Studio Hub</span>
             </h1>
-            <p className="text-xxs sm:text-xs text-slate-400 mt-1">
-              Fully dynamic role-based control panel to manage every content item, orders, appointments, expenses, and settings.
+            <p className="text-xxs sm:text-xs text-neutral-400 mt-1">
+              Manage photography packages, enquiries, bookings, gallery showcase, e-store products, SEO, and studio operations.
             </p>
           </div>
           
-          <button 
-            onClick={fetchDashboardData}
-            className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 hover:text-white transition-all rounded-xl text-xxs font-mono font-bold uppercase tracking-wider"
-          >
-            🔄 Sync Fresh Data
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button 
+              type="button"
+              onClick={fetchDashboardData}
+              className="px-4 py-2 bg-[#1A1A1A] border border-white/15 hover:border-[#D4AF37]/40 hover:text-[#D4AF37] transition-all rounded-xl text-xxs font-mono font-bold uppercase tracking-wider whitespace-nowrap shrink-0"
+            >
+              Sync Fresh Data
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                navigate('/login');
+              }}
+              className="px-4 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 rounded-xl text-xxs font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
 
         {/* Layout Grid: Sidebar Navigation + Workspace */}
@@ -1367,69 +1440,110 @@ export const AdminDashboard: React.FC = () => {
                 
                 {/* Highlights Card Grid */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-slate-400">
-                  <div className="bg-slate-900 border border-slate-850 p-5 rounded-2xl space-y-2">
-                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-slate-500">Gross Sales Revenue</p>
+                  <div className="bg-[#1A1A1A] border border-white/10 p-5 rounded-2xl space-y-2">
+                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-neutral-400">Total Enquiries</p>
+                    <h4 className="text-lg sm:text-2xl font-bold text-white">{inquiries.length}</h4>
+                    <span className="text-[#D4AF37] text-xxs font-mono font-bold">{newInquiriesCount} New Awaiting Reply</span>
+                  </div>
+
+                  <div className="bg-[#1A1A1A] border border-white/10 p-5 rounded-2xl space-y-2">
+                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-neutral-400">Shoot Bookings</p>
+                    <h4 className="text-lg sm:text-2xl font-bold text-emerald-400">{bookings.length}</h4>
+                    <span className="text-emerald-400 text-xxs font-mono font-bold">{confirmedBookingsCount} Confirmed • {completedBookingsCount} Done</span>
+                  </div>
+
+                  <div className="bg-[#1A1A1A] border border-white/10 p-5 rounded-2xl space-y-2">
+                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-neutral-400">Gross Store Sales</p>
                     <h4 className="text-lg sm:text-2xl font-bold text-white">₹{totalSales.toLocaleString('en-IN')}</h4>
-                    <span className="text-emerald-500 text-xxs font-mono font-bold">100% Secure Flow</span>
+                    <span className="text-neutral-400 text-xxs font-mono font-bold">{pendingOrders} Pending • {completedOrders} Delivered</span>
                   </div>
 
-                  <div className="bg-slate-900 border border-slate-850 p-5 rounded-2xl space-y-2">
-                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-slate-500">Total Studio Expenses</p>
-                    <h4 className="text-lg sm:text-2xl font-bold text-rose-400">₹{totalExpenses.toLocaleString('en-IN')}</h4>
-                    <span className="text-rose-500/80 text-xxs font-mono font-bold">Outflow Checked</span>
-                  </div>
-
-                  <div className="bg-slate-900 border border-slate-850 p-5 rounded-2xl space-y-2">
-                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-slate-500">Net Operating Profits</p>
-                    <h4 className="text-lg sm:text-2xl font-bold text-emerald-400">₹{netProfit.toLocaleString('en-IN')}</h4>
-                    <span className="text-emerald-500 text-xxs font-mono font-bold">In Ledger</span>
-                  </div>
-
-                  <div className="bg-slate-900 border border-slate-850 p-5 rounded-2xl space-y-2">
-                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-slate-500">Shoot Appointments</p>
-                    <h4 className="text-lg sm:text-2xl font-bold text-amber-400">{bookings.length} Registered</h4>
-                    <span className="text-amber-500 text-xxs font-mono font-bold">{bookings.filter(b => b.status === 'Pending').length} Pending Approve</span>
+                  <div className="bg-[#1A1A1A] border border-white/10 p-5 rounded-2xl space-y-2">
+                    <p className="text-xxs uppercase font-mono font-semibold tracking-wider text-neutral-400">Net Operating Profit</p>
+                    <h4 className="text-lg sm:text-2xl font-bold text-[#D4AF37]">₹{netProfit.toLocaleString('en-IN')}</h4>
+                    <span className="text-rose-400 text-xxs font-mono font-bold">Expenses: ₹{totalExpenses.toLocaleString('en-IN')}</span>
                   </div>
                 </div>
 
-                {/* Sub row - Additional bento boxes */}
+                {/* Quick Summary bento row */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-sans">
-                  <div className="p-5 bg-slate-900 border border-slate-850 rounded-2xl space-y-1">
-                    <span className="text-slate-400">Pending Orders</span>
-                    <h5 className="text-2xl font-bold text-white">{pendingOrders}</h5>
+                  <div className="p-5 bg-[#1A1A1A] border border-white/10 rounded-2xl space-y-1">
+                    <span className="text-neutral-400">Confirmed Shoot Bookings</span>
+                    <h5 className="text-2xl font-bold text-white">{confirmedBookingsCount}</h5>
                   </div>
-                  <div className="p-5 bg-slate-900 border border-slate-850 rounded-2xl space-y-1">
-                    <span className="text-slate-400">Completed Orders</span>
-                    <h5 className="text-2xl font-bold text-white">{completedOrders}</h5>
+                  <div className="p-5 bg-[#1A1A1A] border border-white/10 rounded-2xl space-y-1">
+                    <span className="text-neutral-400">Portfolio Photos</span>
+                    <h5 className="text-2xl font-bold text-white">{gallery.length} Items</h5>
                   </div>
-                  <div className="p-5 bg-slate-900 border border-slate-850 rounded-2xl space-y-1">
-                    <span className="text-slate-400">E-Store Catalog items</span>
+                  <div className="p-5 bg-[#1A1A1A] border border-white/10 rounded-2xl space-y-1">
+                    <span className="text-neutral-400">E-Store Catalog</span>
                     <h5 className="text-2xl font-bold text-white">{products.length} Products</h5>
                   </div>
                 </div>
 
-                {/* Recent Activities Panel */}
-                <div className="bg-slate-900 border border-slate-850 p-6 rounded-3xl space-y-4">
-                  <h3 className="text-xs uppercase font-mono font-bold text-white tracking-wider border-b border-slate-850 pb-3">Recent Activities Stream</h3>
-                  <div className="space-y-4 max-h-96 overflow-y-auto text-xxs sm:text-xs">
-                    {bookings.slice(0, 3).map((bk, i) => (
-                      <div key={i} className="flex gap-3 items-start border-b border-slate-850 pb-3">
-                        <CalendarDays className="h-5 w-5 text-amber-500 mt-0.5" />
-                        <div>
-                          <p className="text-white font-semibold">New session reservation: {bk.serviceTitle}</p>
-                          <p className="text-slate-500">Booked by {bk.customerName} for {bk.date} at {bk.time}. Advance paid: ₹{bk.advancePaid}</p>
+                {/* Recent Enquiries & Shoot Bookings Stream */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-[#1A1A1A] border border-white/10 p-6 rounded-3xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <h3 className="text-xs uppercase font-mono font-bold text-[#D4AF37] tracking-wider">Recent Enquiries</h3>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('inquiries')}
+                        className="text-xxs font-mono text-neutral-400 hover:text-white"
+                      >
+                        View All →
+                      </button>
+                    </div>
+                    <div className="space-y-3 max-h-80 overflow-y-auto text-xxs sm:text-xs">
+                      {inquiries.length === 0 ? (
+                        <p className="text-neutral-500 py-4 font-mono">No enquiries submitted yet.</p>
+                      ) : (
+                        inquiries.slice(0, 5).map((inq, i) => (
+                          <div key={inq.id || i} className="flex justify-between gap-3 items-start border-b border-white/5 pb-3">
+                            <div>
+                              <p className="text-white font-semibold">{inq.fullName || inq.name || 'Guest'}</p>
+                              <p className="text-neutral-400">{inq.service || inq.subject || 'General Enquiry'} • {inq.phone}</p>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-[#D4AF37]/15 text-[#D4AF37] font-mono text-[10px] font-bold shrink-0">
+                              {inq.status || 'New'}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#1A1A1A] border border-white/10 p-6 rounded-3xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <h3 className="text-xs uppercase font-mono font-bold text-[#D4AF37] tracking-wider">Recent Bookings & Orders</h3>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('bookings')}
+                        className="text-xxs font-mono text-neutral-400 hover:text-white"
+                      >
+                        Manage Bookings →
+                      </button>
+                    </div>
+                    <div className="space-y-3 max-h-80 overflow-y-auto text-xxs sm:text-xs">
+                      {bookings.slice(0, 3).map((bk, i) => (
+                        <div key={bk.id || i} className="flex gap-3 items-start border-b border-white/5 pb-3">
+                          <CalendarDays className="h-5 w-5 text-[#D4AF37] mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-white font-semibold">{bk.serviceTitle}</p>
+                            <p className="text-neutral-400">{bk.customerName} • {bk.date} ({bk.status})</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    {orders.slice(0, 3).map((or, i) => (
-                      <div key={i} className="flex gap-3 items-start border-b border-slate-850 pb-3">
-                        <ShoppingBag className="h-5 w-5 text-indigo-400 mt-0.5" />
-                        <div>
-                          <p className="text-white font-semibold">New shopping cart checkout order placed</p>
-                          <p className="text-slate-500">Client {or.customerName} placed order #{or.id.slice(0,6)} for total sum of ₹{or.total.toLocaleString('en-IN')}</p>
+                      ))}
+                      {orders.slice(0, 3).map((or, i) => (
+                        <div key={or.id || i} className="flex gap-3 items-start border-b border-white/5 pb-3">
+                          <ShoppingBag className="h-5 w-5 text-emerald-400 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-white font-semibold">Print Order #{or.id.slice(0, 6)}</p>
+                            <p className="text-neutral-400">{or.customerName} • ₹{or.total.toLocaleString('en-IN')} ({or.status})</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1783,7 +1897,7 @@ export const AdminDashboard: React.FC = () => {
                     <h4 className="text-xxs uppercase tracking-wider font-mono font-bold text-amber-500">Portfolio & Store Category Banner Images</h4>
                     <p className="text-slate-400 text-xxs">Configure the cover/background images for portfolio and merchandise product categories.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {['Wedding', 'Pre Wedding', 'Baby', 'Events', 'Birthday', 'Drone', 'Albums'].map((cat) => (
+                      {['Wedding', 'Pre-Wedding', 'Engagement', 'Birthday', 'Maternity', 'Baby', 'Events', 'Cinematic Films', 'Album Designs'].map((cat) => (
                         <div key={cat} className="p-3 bg-slate-950 border border-slate-850 rounded-2xl space-y-2">
                           <p className="font-bold text-amber-400 text-[10px] font-mono uppercase tracking-wider">{cat} Category</p>
                           <ImageField
@@ -1800,14 +1914,180 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Brand Identity, Instagram & SEO Configuration */}
+                  <div className="space-y-4 pt-4 border-t border-slate-850">
+                    <h4 className="text-xxs uppercase tracking-wider font-mono font-bold text-amber-500">Instagram Social & Global SEO Settings</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold">Studio Tagline</label>
+                        <input
+                          type="text"
+                          value={settings.tagline || ''}
+                          onChange={(e) => setSettings({ ...settings, tagline: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold">Creative Sub-Brand Name</label>
+                        <input
+                          type="text"
+                          value={settings.creativeBrand || 'Arvind Creation'}
+                          onChange={(e) => setSettings({ ...settings, creativeBrand: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold">Instagram Handle</label>
+                        <input
+                          type="text"
+                          value={settings.instagramHandle || 'Shiv_photography_officel'}
+                          onChange={(e) => setSettings({ ...settings, instagramHandle: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold">Instagram Profile URL</label>
+                        <input
+                          type="url"
+                          value={settings.instagramUrl || ''}
+                          onChange={(e) => setSettings({ ...settings, instagramUrl: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold">Google Business Profile Link</label>
+                        <input
+                          type="url"
+                          value={settings.googleBusinessUrl || ''}
+                          onChange={(e) => setSettings({ ...settings, googleBusinessUrl: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold">Canonical Website Domain</label>
+                        <input
+                          type="url"
+                          value={settings.canonicalDomain || 'https://shiv-studio.vercel.app'}
+                          onChange={(e) => setSettings({ ...settings, canonicalDomain: e.target.value })}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-slate-400 font-semibold">SEO Meta Title</label>
+                      <input
+                        type="text"
+                        value={settings.seoTitle || ''}
+                        onChange={(e) => setSettings({ ...settings, seoTitle: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-slate-400 font-semibold">SEO Meta Description</label>
+                      <textarea
+                        rows={2}
+                        value={settings.seoDescription || ''}
+                        onChange={(e) => setSettings({ ...settings, seoDescription: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-slate-400 font-semibold">SEO Meta Keywords</label>
+                      <input
+                        type="text"
+                        value={settings.seoKeywords || ''}
+                        onChange={(e) => setSettings({ ...settings, seoKeywords: e.target.value })}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Instagram Gallery (Homepage Grid) */}
+                  <div className="space-y-4 pt-4 border-t border-slate-850">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xxs uppercase tracking-wider font-mono font-bold text-amber-500">Homepage Instagram Gallery</h4>
+                        <p className="text-slate-400 text-xxs">Manage the Instagram showcase tiles displayed on the homepage.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentIg = Array.isArray(settings.instagramGallery) ? settings.instagramGallery : [];
+                          setSettings({
+                            ...settings,
+                            instagramGallery: [
+                              ...currentIg,
+                              { id: `ig_${Date.now()}`, imageUrl: STUDIO_IMAGES.heroWedding, caption: 'SHIV STUDIO Moment', postUrl: settings.instagramUrl || 'https://www.instagram.com/Shiv_photography_officel/' }
+                            ]
+                          });
+                        }}
+                        className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:border-amber-500/40 text-amber-400 rounded-lg text-xxs font-mono font-bold"
+                      >
+                        + Add Instagram Tile
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {(settings.instagramGallery || []).map((tile: any, idx: number) => (
+                        <div key={tile.id || idx} className="p-3 bg-slate-950 border border-slate-850 rounded-2xl space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-mono text-amber-400 font-bold">Tile #{idx + 1}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (settings.instagramGallery || []).filter((_: any, i: number) => i !== idx);
+                                setSettings({ ...settings, instagramGallery: updated });
+                              }}
+                              className="text-rose-400 text-xxs hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            value={tile.caption || ''}
+                            onChange={(e) => {
+                              const updated = [...(settings.instagramGallery || [])];
+                              updated[idx] = { ...tile, caption: e.target.value };
+                              setSettings({ ...settings, instagramGallery: updated });
+                            }}
+                            placeholder="Caption..."
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xxs text-white outline-none"
+                          />
+                          <ImageField
+                            value={tile.imageUrl || ''}
+                            onChange={(url) => {
+                              const updated = [...(settings.instagramGallery || [])];
+                              updated[idx] = { ...tile, imageUrl: url };
+                              setSettings({ ...settings, instagramGallery: updated });
+                            }}
+                            storagePath="instagram"
+                            label="Tile Image"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
-                    className="w-full py-4 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl uppercase font-mono tracking-wider transition-all"
+                    disabled={isSavingSettings}
+                    className="w-full py-4 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl uppercase font-mono tracking-wider transition-all disabled:opacity-60"
                   >
-                    💾 Save and Deploy Settings Live
+                    {isSavingSettings ? 'Saving Settings...' : 'Save and Deploy Settings Live'}
                   </button>
                 </form>
               </div>
+            )}
+
+            {/* PACKAGES & PRICING MANAGER */}
+            {activeTab === 'packages' && (
+              <AdminPackageManager onTriggerConfirm={triggerConfirm} />
+            )}
+
+            {/* ADMIN PROFILE PANEL */}
+            {activeTab === 'profile' && (
+              <AdminProfilePanel />
             )}
 
             {/* 3. SERVICES CATALOG MANAGEMENT */}
@@ -1822,10 +2102,14 @@ export const AdminDashboard: React.FC = () => {
                     onClick={() => {
                       setEditingService(null);
                       setSTitle('');
+                      setSSlug('');
                       setSCategory('Photography');
                       setSPrice(5000);
+                      setSShortDescription('');
                       setSDescription('');
+                      setSDeliverablesText('');
                       setSImage('');
+                      setSIsPublished(true);
                       setSEnableGst(true);
                       setSGstPercent(18);
                       setSGstIncludedInPrice(true);
@@ -1834,7 +2118,7 @@ export const AdminDashboard: React.FC = () => {
                     className="px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-all"
                   >
                     <Plus className="h-4 w-4" />
-                    <span>Create Service Package</span>
+                    <span>Create Service</span>
                   </button>
                 </div>
 
@@ -1843,7 +2127,7 @@ export const AdminDashboard: React.FC = () => {
                     <div key={s.id} className="bg-slate-900 border border-slate-850 p-4 rounded-3xl flex flex-col justify-between">
                       <div>
                         <img 
-                          src={s.image || 'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&q=80&w=400'} 
+                          src={s.coverImage || s.image || STUDIO_IMAGES.heroWedding} 
                           alt={s.title} 
                           className="aspect-video rounded-2xl object-cover w-full bg-slate-950" 
                           referrerPolicy="no-referrer"
@@ -2139,15 +2423,17 @@ export const AdminDashboard: React.FC = () => {
                         <tr key={bk.id} className="hover:bg-slate-850/30">
                           <td className="py-3.5">
                             <p className="font-bold text-white">{bk.customerName}</p>
-                            <p className="text-slate-500 text-xxs font-mono">#{bk.id.slice(0, 8).toUpperCase()}</p>
+                            <p className="text-slate-400 text-xxs font-mono">{bk.customerPhone || bk.whatsappNumber || bk.customerEmail}</p>
+                            <p className="text-slate-500 text-[10px] font-mono">#{bk.id.slice(0, 8).toUpperCase()}</p>
                           </td>
                           <td className="py-3.5">
-                            <p className="font-semibold text-slate-300">{bk.serviceTitle}</p>
-                            <p className="text-slate-400 text-xxs">{bk.date} at {bk.time}</p>
+                            <p className="font-semibold text-slate-200">{bk.packageName || bk.serviceTitle}</p>
+                            <p className="text-slate-400 text-xxs">{bk.date} {bk.time ? `at ${bk.time}` : ''}</p>
+                            {bk.location && <p className="text-slate-500 text-[10px] truncate max-w-[180px]">{bk.location}</p>}
                           </td>
                           <td className="py-3.5">
-                            <p className="text-slate-300">Total: ₹{bk.totalPrice}</p>
-                            <p className="text-emerald-400 font-bold">Paid Adv: ₹{bk.advancePaid}</p>
+                            <p className="text-slate-300">Total: ₹{(bk.totalPrice || 0).toLocaleString('en-IN')}</p>
+                            <p className="text-emerald-400 font-bold">Paid Adv: ₹{(bk.advancePaid || 0).toLocaleString('en-IN')}</p>
                           </td>
                           <td className="py-3.5">
                             <select
@@ -2163,42 +2449,42 @@ export const AdminDashboard: React.FC = () => {
                             </select>
                           </td>
                           <td className="py-3.5">
-                            <span className={`px-2 py-0.5 rounded text-xxs font-bold ${
-                              bk.status === 'Approved' 
-                                ? 'bg-emerald-500/10 text-emerald-400' 
-                                : bk.status === 'Completed'
-                                ? 'bg-indigo-500/10 text-indigo-400'
-                                : bk.status === 'Cancelled'
-                                ? 'bg-rose-500/10 text-rose-400'
-                                : 'bg-amber-500/10 text-amber-400'
-                            }`}>
-                              {bk.status}
-                            </span>
+                            <select
+                              value={bk.status}
+                              onChange={(e) => handleUpdateBookingStatus(bk.id, e.target.value as any)}
+                              className="bg-slate-950 border border-slate-850 rounded text-xxs text-[#D4AF37] font-bold px-2 py-1 outline-none"
+                            >
+                              <option value="New">New</option>
+                              <option value="Pending">Pending</option>
+                              <option value="Contacted">Contacted</option>
+                              <option value="Discussion">Discussion</option>
+                              <option value="Confirmed">Confirmed</option>
+                              <option value="Approved">Approved</option>
+                              <option value="Completed">Completed</option>
+                              <option value="Cancelled">Cancelled</option>
+                            </select>
                           </td>
                           <td className="py-3.5 text-right flex justify-end gap-1.5">
+                            <a
+                              href={buildWhatsAppUrl(
+                                bk.whatsappNumber || bk.customerPhone || settings.whatsappNumber,
+                                `Hello ${bk.customerName}, regarding your SHIV STUDIO booking (${bk.serviceTitle}) for ${bk.date}:`
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all"
+                              title="Reply on WhatsApp"
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                            </a>
                             <button
+                              type="button"
                               onClick={() => { setSelectedDoc(bk); setSelectedType('booking'); }}
                               className="p-2 bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-850 rounded-xl transition-all"
-                              title="Tax Invoice"
+                              title="Receipt / Invoice"
                             >
                               <FileText className="h-4 w-4" />
                             </button>
-                            {bk.status === 'Pending' && (
-                              <button
-                                onClick={() => handleUpdateBookingStatus(bk.id, 'Approved')}
-                                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-xxs uppercase transition-all"
-                              >
-                                Approve
-                              </button>
-                            )}
-                            {bk.status === 'Approved' && (
-                              <button
-                                onClick={() => handleUpdateBookingStatus(bk.id, 'Completed')}
-                                className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xxs uppercase transition-all"
-                              >
-                                Complete
-                              </button>
-                            )}
                           </td>
                         </tr>
                       ))}
@@ -2533,47 +2819,63 @@ export const AdminDashboard: React.FC = () => {
             {/* 10. REVIEWS & OWNER REPLY */}
             {activeTab === 'reviews' && (
               <div className="bg-slate-900 border border-slate-850 p-6 rounded-3xl space-y-6 animate-fade-in text-xs font-sans">
-                <div>
-                  <h3 className="text-base font-bold text-white uppercase tracking-wider border-b border-slate-850 pb-3">
-                    Customer Testimonials & Reviews
-                  </h3>
-                  <p className="text-xxs text-slate-400 mt-1">Read reviews posted on website, write official replies to thank clients, or moderate items.</p>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-850 pb-4">
+                  <div>
+                    <h3 className="text-base font-bold text-white uppercase tracking-wider">
+                      Customer Testimonials & Reviews
+                    </h3>
+                    <p className="text-xxs text-slate-400 mt-1">Manage verified client reviews shown on the homepage, reply to clients, or control visibility.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openAddReviewModal}
+                    className="px-4 py-2 bg-[#D4AF37] hover:bg-[#c5a028] text-[#111111] font-extrabold text-xs rounded-xl flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Verified Review</span>
+                  </button>
                 </div>
 
                 <div className="space-y-4 max-h-[500px] overflow-y-auto">
-                  {reviews.map((rev) => (
-                    <div key={rev.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-850 space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-white text-xs">{rev.customerName}</p>
-                          <p className="text-slate-500 text-xxs font-mono">{rev.date} | Rated: {rev.rating}⭐</p>
+                  {reviews.length === 0 ? (
+                    <p className="text-slate-500 text-center py-8 font-mono">No client reviews published yet. Click "Add Verified Review" to add authentic client feedback.</p>
+                  ) : (
+                    reviews.map((rev) => (
+                      <div key={rev.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-850 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-white text-xs">{rev.customerName}</p>
+                            <p className="text-slate-500 text-xxs font-mono">
+                              {rev.date} • {rev.serviceCategory || 'Studio Client'} • Rated: {rev.rating}/5 • {rev.isPublished === false ? 'Hidden' : 'Published'}
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => startEditReview(rev)}
+                              className="px-3 py-1 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded text-xxs font-bold transition-all"
+                            >
+                              Edit / Reply
+                            </button>
+                            <button
+                              onClick={() => handleDeleteReview(rev.id)}
+                              className="p-1 text-slate-500 hover:text-rose-500 transition-all"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => startEditReview(rev)}
-                            className="px-3 py-1 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded text-xxs font-bold transition-all"
-                          >
-                            Reply
-                          </button>
-                          <button
-                            onClick={() => handleDeleteReview(rev.id)}
-                            className="p-1 text-slate-500 hover:text-rose-500 transition-all"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+
+                        <p className="text-slate-300 italic text-xxs sm:text-xs">"{rev.comment}"</p>
+
+                        {rev.reply && (
+                          <div className="pl-4 border-l-2 border-amber-500 bg-slate-900 p-2.5 rounded-r-xl">
+                            <p className="text-xxs text-amber-500 font-bold uppercase tracking-wider">Studio Response</p>
+                            <p className="text-slate-400 text-xxs mt-0.5 leading-normal">{rev.reply}</p>
+                          </div>
+                        )}
                       </div>
-
-                      <p className="text-slate-300 italic text-xxs sm:text-xs">"{rev.comment}"</p>
-
-                      {rev.reply && (
-                        <div className="pl-4 border-l-2 border-amber-500 bg-slate-900 p-2.5 rounded-r-xl">
-                          <p className="text-xxs text-amber-500 font-bold uppercase tracking-wider">Owner Response</p>
-                          <p className="text-slate-400 text-xxs mt-0.5 leading-normal">{rev.reply}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -2647,29 +2949,74 @@ export const AdminDashboard: React.FC = () => {
             {activeTab === 'inquiries' && (
               <div className="bg-slate-900 border border-slate-850 rounded-3xl overflow-hidden p-6 space-y-6 shadow-xl animate-fade-in text-xs font-sans">
                 <div>
-                  <h3 className="text-base font-bold text-white uppercase tracking-wider border-b border-slate-850 pb-3">Inquiries Inbox</h3>
-                  <p className="text-xxs text-slate-400 mt-1">Direct inquiries dropped by local guests on the contact form page.</p>
+                  <h3 className="text-base font-bold text-white uppercase tracking-wider border-b border-slate-850 pb-3">
+                    Client Enquiries & Lead Tracker ({inquiries.length})
+                  </h3>
+                  <p className="text-xxs text-slate-400 mt-1">Manage website enquiries, update follow-up status, or reply directly on WhatsApp.</p>
                 </div>
 
-                <div className="space-y-4 max-h-[500px] overflow-y-auto">
+                <div className="space-y-4 max-h-[560px] overflow-y-auto">
                   {inquiries.length === 0 ? (
                     <p className="text-slate-500 text-center py-10 font-mono">No customer inquiries received yet.</p>
                   ) : (
                     inquiries.map((inq) => (
-                      <div key={inq.id} className="p-4 bg-slate-950 border border-slate-850 rounded-2xl relative space-y-2">
-                        <button
-                          onClick={() => handleDeleteInquiry(inq.id)}
-                          className="absolute top-4 right-4 text-slate-500 hover:text-rose-500 transition-all"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                        
-                        <div>
-                          <h4 className="font-bold text-white text-xs">{inq.fullName}</h4>
-                          <p className="text-slate-500 text-xxs font-mono">{inq.email} | {inq.phone} | Received: {inq.createdAt?.split('T')[0]}</p>
+                      <div key={inq.id} className="p-4 bg-slate-950 border border-slate-850 rounded-2xl space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              {inq.enquiryNumber && (
+                                <span className="text-[10px] font-mono text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-0.5 rounded">
+                                  {inq.enquiryNumber}
+                                </span>
+                              )}
+                              <h4 className="font-bold text-white text-xs">{inq.fullName || inq.name || 'Guest'}</h4>
+                            </div>
+                            <p className="text-slate-400 text-xxs font-mono mt-1">
+                              {inq.phone || inq.customerPhone} {inq.email ? `| ${inq.email}` : ''} {inq.service ? `| Service: ${inq.service}` : ''} | {inq.createdAt?.split('T')[0]}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <select
+                              value={inq.status || 'New'}
+                              onChange={(e) => handleUpdateInquiryStatus(inq.id, e.target.value)}
+                              className="bg-slate-900 border border-slate-800 rounded-lg text-xxs text-[#D4AF37] font-bold px-2.5 py-1.5 outline-none"
+                            >
+                              <option value="New">New</option>
+                              <option value="Contacted">Contacted</option>
+                              <option value="Discussion">Discussion</option>
+                              <option value="Confirmed">Confirmed</option>
+                              <option value="Completed">Completed</option>
+                              <option value="Cancelled">Cancelled</option>
+                            </select>
+
+                            <a
+                              href={buildWhatsAppUrl(
+                                inq.whatsappNumber || inq.phone || inq.customerPhone || settings.whatsappNumber,
+                                `Hello ${inq.fullName || inq.name || ''}, thank you for contacting SHIV STUDIO regarding ${inq.service || inq.subject || 'photography & creative services'}.`
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg"
+                              title="Reply via WhatsApp"
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInquiry(inq.id)}
+                              className="p-2 text-slate-500 hover:text-rose-500 transition-all"
+                              title="Delete Enquiry"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
-                        
-                        <p className="text-slate-300 leading-normal text-xxs sm:text-xs">"{inq.message}"</p>
+
+                        <p className="text-slate-300 leading-normal text-xxs sm:text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800/70">
+                          "{inq.message}"
+                        </p>
                       </div>
                     ))
                   )}
@@ -3721,26 +4068,43 @@ export const AdminDashboard: React.FC = () => {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-slate-400 font-semibold">Service Title</label>
-                  <input type="text" required value={sTitle} onChange={(e) => setSTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Wedding Photography Pack" />
+                  <input type="text" required value={sTitle} onChange={(e) => setSTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Wedding Photography" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-slate-400 font-semibold">Service Type / Category</label>
-                    <select value={sCategory} onChange={(e) => setSCategory(e.target.value as any)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none">
+                    <label className="text-slate-400 font-semibold">Service Category</label>
+                    <select value={sCategory} onChange={(e) => setSCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none">
                       <option value="Photography">Photography</option>
+                      <option value="Videography">Videography</option>
                       <option value="Printing">Printing Press</option>
+                      <option value="Design">Design</option>
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-slate-400 font-semibold">Standard Booking Advance Fee (INR)</label>
+                    <label className="text-slate-400 font-semibold">Starting Price (INR)</label>
                     <input type="number" required value={sPrice} onChange={(e) => setSPrice(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-slate-400 font-semibold">Package Detailed Inclusions</label>
-                  <textarea rows={5} required value={sDescription} onChange={(e) => setSDescription(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Full-day drone, 3 cinematographers, luxury album included..."></textarea>
+                  <label className="text-slate-400 font-semibold">URL Slug (e.g. wedding-photography)</label>
+                  <input type="text" value={sSlug} onChange={(e) => setSSlug(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none font-mono" placeholder="Auto-generated if blank" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-slate-400 font-semibold">Short Card Summary</label>
+                  <input type="text" value={sShortDescription} onChange={(e) => setSShortDescription(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="1-line overview shown on Services cards" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-slate-400 font-semibold">Full Service Description</label>
+                  <textarea rows={4} required value={sDescription} onChange={(e) => setSDescription(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="Describe camera gear, style, coverage..." />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-slate-400 font-semibold">Deliverables (one item per line)</label>
+                  <textarea rows={3} value={sDeliverablesText} onChange={(e) => setSDeliverablesText(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none font-mono text-[11px]" placeholder={'Color-graded high-res photos\nHighlight video reel'} />
                 </div>
               </div>
 
@@ -3751,8 +4115,13 @@ export const AdminDashboard: React.FC = () => {
                   onChange={setSImage}
                   storagePath="services"
                   label="Cover Image"
-                  recommendedSize="Landscape (800x600)"
+                  recommendedSize="Landscape (1200x800)"
                 />
+
+                <label className="flex items-center gap-2.5 p-3 bg-slate-950 rounded-xl border border-slate-850 cursor-pointer">
+                  <input type="checkbox" checked={sIsPublished} onChange={(e) => setSIsPublished(e.target.checked)} className="accent-amber-400 h-4 w-4" />
+                  <span className="font-semibold text-white">Published & Visible on Website</span>
+                </label>
 
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-850 space-y-3">
                   <div className="flex items-center justify-between">
@@ -3766,7 +4135,7 @@ export const AdminDashboard: React.FC = () => {
                           onChange={() => setSEnableGst(true)} 
                           className="accent-amber-400" 
                         />
-                        <span className="text-emerald-400 font-bold">☑ Enable GST</span>
+                        <span className="text-emerald-400 font-bold">Enable GST</span>
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input 
@@ -3776,7 +4145,7 @@ export const AdminDashboard: React.FC = () => {
                           onChange={() => setSEnableGst(false)} 
                           className="accent-amber-400" 
                         />
-                        <span className="text-slate-400 font-bold">☐ Disable GST</span>
+                        <span className="text-slate-400 font-bold">Disable GST</span>
                       </label>
                     </div>
                   </div>
@@ -3816,8 +4185,8 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Action Button */}
               <div className="md:col-span-2 pt-2">
-                <button type="submit" className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider uppercase font-mono">
-                  Save Service Category
+                <button type="submit" disabled={isSavingService} className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider uppercase font-mono">
+                  {isSavingService ? 'Saving...' : 'Save Service'}
                 </button>
               </div>
             </form>
@@ -3831,34 +4200,35 @@ export const AdminDashboard: React.FC = () => {
           <div className="relative w-full md:max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 text-white text-xs font-sans max-h-[95vh] overflow-y-auto">
             <button onClick={() => setShowGalleryModal(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white">✕</button>
             <h3 className="text-sm font-bold uppercase tracking-wider mb-6 text-amber-500">
-              {editingGallery ? 'Modify Gallery Asset' : 'Upload Gallery Work'}
+              {editingGallery ? 'Modify Portfolio Photo' : 'Upload Portfolio Photo'}
             </h3>
             <form onSubmit={handleSaveGallery} className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Left Column */}
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-slate-400 font-semibold">Photo Label Title</label>
-                  <input type="text" value={gTitle} onChange={(e) => setGTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Priyesh & Shreya Pre-wedding" />
+                  <label className="text-slate-400 font-semibold">Photo Title</label>
+                  <input type="text" required value={gTitle} onChange={(e) => setGTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Royal Mandap Portrait" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-slate-400 font-semibold">Album Category</label>
-                    <select value={gCategory} onChange={(e) => setGCategory(e.target.value as any)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none">
+                    <label className="text-slate-400 font-semibold">Portfolio Category</label>
+                    <select value={gCategory} onChange={(e) => setGCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none">
                       <option value="Wedding">Wedding</option>
-                      <option value="Pre Wedding">Pre Wedding</option>
-                      <option value="Baby">Baby Portfolio</option>
-                      <option value="Events">Official Events</option>
-                      <option value="Birthday">Birthday shoots</option>
-                      <option value="Drone">Drone cinematics</option>
-                      <option value="Albums">Albums prints</option>
-                      <option value="Videos">Cinematics teaser</option>
+                      <option value="Pre-Wedding">Pre-Wedding</option>
+                      <option value="Engagement">Engagement</option>
+                      <option value="Birthday">Birthday</option>
+                      <option value="Maternity">Maternity</option>
+                      <option value="Baby">Baby</option>
+                      <option value="Events">Events</option>
+                      <option value="Cinematic Films">Cinematic Films</option>
+                      <option value="Album Designs">Album Designs</option>
                     </select>
                   </div>
                   <div className="space-y-1.5 flex flex-col justify-end">
                     <label className="flex items-center gap-2 cursor-pointer py-3 text-slate-300">
                       <input type="checkbox" checked={gIsFeatured} onChange={(e) => setGIsFeatured(e.target.checked)} className="accent-amber-500 h-4 w-4" />
-                      <span>Featured on Home Slider</span>
+                      <span>Featured on Homepage</span>
                     </label>
                   </div>
                 </div>
@@ -3870,15 +4240,15 @@ export const AdminDashboard: React.FC = () => {
                   value={gImageUrl}
                   onChange={setGImageUrl}
                   storagePath="gallery"
-                  label="Photo Image"
+                  label="Portfolio Image *"
                   recommendedSize="1200x800 or portrait equivalents"
                 />
               </div>
 
               {/* Action Button */}
               <div className="md:col-span-2 pt-2">
-                <button type="submit" className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider uppercase font-mono">
-                  Publish Portfolio item
+                <button type="submit" disabled={isSavingGallery} className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider uppercase font-mono">
+                  {isSavingGallery ? 'Publishing...' : 'Publish Portfolio Photo'}
                 </button>
               </div>
             </form>
@@ -3947,32 +4317,41 @@ export const AdminDashboard: React.FC = () => {
           <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 text-white text-xs font-sans max-h-[95vh] overflow-y-auto">
             <button onClick={() => setShowReviewModal(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white">✕</button>
             <h3 className="text-sm font-bold uppercase tracking-wider mb-6 text-amber-500">
-              {editingReview ? 'Respond to Testimonial' : 'Publish Direct Review testimonial'}
+              {editingReview ? 'Respond to Client Testimonial' : 'Add Verified Client Review'}
             </h3>
             <form onSubmit={handleSaveReview} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-slate-400 font-semibold">Client Name</label>
-                  <input type="text" required value={rCustomerName} onChange={(e) => setRCustomerName(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Vineet Kumar" />
+                  <input type="text" required value={rCustomerName} onChange={(e) => setRCustomerName(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="Client Full Name" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-slate-400 font-semibold">Rating (1 to 5 Stars)</label>
+                  <label className="text-slate-400 font-semibold">Service Category</label>
+                  <input type="text" value={rServiceCategory} onChange={(e) => setRServiceCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Wedding Photography" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-slate-400 font-semibold">Rating (1 to 5)</label>
                   <input type="number" min={1} max={5} required value={rRating} onChange={(e) => setRRating(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-slate-400 font-semibold">Client Feedback comment</label>
+                <label className="text-slate-400 font-semibold">Client Review Comment</label>
                 <textarea rows={3} required value={rComment} onChange={(e) => setRComment(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none"></textarea>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-slate-400 font-semibold">Owner Response Reply (Persisted to Live Website)</label>
-                <textarea rows={3} value={rReply} onChange={(e) => setRReply(e.target.value)} className="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Thank you Vineet for trusting Shiv Studio. We are happy you loved the wedding albums!"></textarea>
+                <label className="text-slate-400 font-semibold">Studio Response Reply</label>
+                <textarea rows={2} value={rReply} onChange={(e) => setRReply(e.target.value)} className="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-4 py-3 text-white outline-none" placeholder="Official studio thank-you reply..."></textarea>
               </div>
 
-              <button type="submit" className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider uppercase font-mono">
-                Save Review and Response
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                <input type="checkbox" checked={rIsPublished} onChange={(e) => setRIsPublished(e.target.checked)} className="accent-amber-400 h-4 w-4" />
+                <span>Publish on Homepage Testimonials</span>
+              </label>
+
+              <button type="submit" disabled={isSavingReview} className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider uppercase font-mono">
+                {isSavingReview ? 'Saving...' : 'Save Review'}
               </button>
             </form>
           </div>
@@ -3992,7 +4371,7 @@ export const AdminDashboard: React.FC = () => {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-slate-400 font-semibold">Article Title</label>
-                  <input type="text" required value={bTitle} onChange={(e) => setBTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. 10 Secrets of Outdoor Portraits" />
+                  <input type="text" required value={bTitle} onChange={(e) => setBTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none" placeholder="e.g. Golden Hour Wedding Portrait Guide" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -4002,11 +4381,10 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-slate-400 font-semibold">Category/Topic</label>
-                    <select value={bCategory} onChange={(e) => setBCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none">
-                      <option value="Photography Guide">Photography Guide</option>
-                      <option value="Industrial Printing">Industrial Printing</option>
-                      <option value="Studio News">Studio News</option>
-                      <option value="Creative Techniques">Creative Techniques</option>
+                    <select value={bCategory} onChange={(e) => setBCategory(e.target.value as 'Photography' | 'Printing' | 'News')} className="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-white outline-none">
+                      <option value="Photography">Photography</option>
+                      <option value="Printing">Printing</option>
+                      <option value="News">News</option>
                     </select>
                   </div>
                 </div>

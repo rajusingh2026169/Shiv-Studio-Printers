@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 import { 
   Plus, 
   Edit3, 
@@ -80,8 +81,8 @@ export const AdminOfferBannerManager: React.FC = () => {
       title: 'Monsoon Special Discount',
       subtitle: 'LIMITED TIME OFFER',
       description: 'Get up to 30% flat discount on all premium wedding photography and printing services!',
-      desktopImageUrl: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=1600',
-      mobileImageUrl: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
+      desktopImageUrl: STUDIO_IMAGES.heroWedding,
+      mobileImageUrl: STUDIO_IMAGES.heroWedding,
       backgroundVideoUrl: '',
       buttonText: 'Claim Discount',
       buttonLink: '/store',

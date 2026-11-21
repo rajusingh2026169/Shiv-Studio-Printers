@@ -5,7 +5,10 @@ import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { WhatsAppButton } from './components/WhatsAppButton';
 import { Landing } from './pages/Landing';
+import { About } from './pages/About';
 import { Services } from './pages/Services';
+import { ServiceDetail } from './pages/ServiceDetail';
+import { Packages } from './pages/Packages';
 import { Gallery } from './pages/Gallery';
 import { Store } from './pages/Store';
 import { Cart } from './pages/Cart';
@@ -15,23 +18,22 @@ import { Blog } from './pages/Blog';
 import { Contact } from './pages/Contact';
 import { WeddingCards } from './pages/WeddingCards';
 import { WeddingCardDetail } from './pages/WeddingCardDetail';
+import { PrivacyPolicy } from './pages/PrivacyPolicy';
+import { TermsConditions } from './pages/TermsConditions';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { AdminDashboard } from './pages/dashboard/AdminDashboard';
-import { PhotographerPanel } from './pages/dashboard/PhotographerPanel';
-import { StaffPanel } from './pages/dashboard/StaffPanel';
 import { CustomerPortal } from './pages/dashboard/CustomerPortal';
 import { CartItem, ProductItem, ProductVariant } from './types';
-import { seedDatabaseIfNeeded } from './firebase';
 
 // Role-based route guardian
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({ children, allowedRoles }) => {
-  const { currentUser, userProfile, loading } = useAuth();
+  const { currentUser, userProfile, loading, isAdmin } = useAuth();
 
   if (loading) {
     return (
-      <div className="bg-slate-950 min-h-screen flex items-center justify-center text-slate-400 font-mono text-xs">
-        Verifying Authorized Security Token...
+      <div className="bg-[#111111] min-h-screen flex items-center justify-center text-[#D4AF37] font-mono text-xs">
+        Verifying Authorized Security Session...
       </div>
     );
   }
@@ -40,8 +42,17 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && userProfile && !allowedRoles.includes(userProfile.role)) {
-    return <Navigate to="/" replace />;
+  if (allowedRoles) {
+    const normalizedAllowed = allowedRoles.map((r) => r.toLowerCase());
+    const userRoleNormalized = (userProfile?.role || '').toLowerCase();
+    const adminRouteRequested = normalizedAllowed.some((r) => r.includes('admin'));
+
+    if (adminRouteRequested && isAdmin()) {
+      return <>{children}</>;
+    }
+    if (userProfile && !normalizedAllowed.includes(userRoleNormalized)) {
+      return <Navigate to="/" replace />;
+    }
   }
 
   return <>{children}</>;
@@ -69,8 +80,13 @@ const MainAppContent: React.FC = () => {
         console.error('Error parsing cached cart:', err);
       }
     }
-    if (cachedWishlist) setWishlist(JSON.parse(cachedWishlist));
-    seedDatabaseIfNeeded();
+    if (cachedWishlist) {
+      try {
+        setWishlist(JSON.parse(cachedWishlist));
+      } catch {
+        setWishlist([]);
+      }
+    }
   }, []);
 
   const saveCart = (newCart: CartItem[]) => {
@@ -160,7 +176,7 @@ const MainAppContent: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between font-sans selection:bg-amber-400 selection:text-slate-950">
+    <div className="bg-[#111111] text-white min-h-screen flex flex-col justify-between font-sans selection:bg-[#D4AF37] selection:text-[#111111]">
       <Navbar 
         cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)} 
         wishlistCount={wishlist.length} 
@@ -170,13 +186,27 @@ const MainAppContent: React.FC = () => {
         <Routes>
           {/* Public Pages */}
           <Route path="/" element={<Landing />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/services" element={<Services />} />
+          <Route path="/services/:slug" element={<ServiceDetail />} />
+          <Route path="/packages" element={<Packages />} />
+          <Route path="/portfolio" element={<Gallery />} />
+          <Route path="/gallery" element={<Gallery />} />
           <Route path="/wedding-cards" element={<WeddingCards />} />
           <Route path="/wedding-cards/:id" element={<WeddingCardDetail />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/gallery" element={<Gallery />} />
           
           <Route 
             path="/store" 
+            element={
+              <Store 
+                onAddToCart={handleAddToCart} 
+                onToggleWishlist={handleToggleWishlist} 
+                wishlist={wishlist.map(w => w.id)} 
+              />
+            } 
+          />
+          <Route 
+            path="/photo-frames-gifts" 
             element={
               <Store 
                 onAddToCart={handleAddToCart} 
@@ -205,6 +235,8 @@ const MainAppContent: React.FC = () => {
           <Route path="/track-order" element={<TrackOrder />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms-conditions" element={<TermsConditions />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 

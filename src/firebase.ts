@@ -3,34 +3,77 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, writeBatch, collection, getDocs, limit, query, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
+import { STUDIO_IMAGES } from './assets/studioAssets';
+import { getDefaultPackagesForSeed, getDefaultServicesForSeed } from './data/studioCatalog';
 
-console.log('Initializing Firebase with Storage Bucket:', firebaseConfig.storageBucket);
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error:', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = 
-  (firebaseConfig as any).firestoreDatabaseId && (firebaseConfig as any).firestoreDatabaseId !== "(default)"
-    ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId) 
+export const db =
+  (firebaseConfig as any).firestoreDatabaseId && (firebaseConfig as any).firestoreDatabaseId !== '(default)'
+    ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
     : getFirestore(app);
 
-// Initialize Firebase Storage with bucket URL
-const rawBucket = firebaseConfig.storageBucket || `${firebaseConfig.projectId}.firebasestorage.app`;
 export const storage = getStorage(app);
-
-// Storage retry configuration (3,000 ms max for fast failover without freezing the UI)
 storage.maxUploadRetryTime = 3000;
 storage.maxOperationRetryTime = 3000;
 
-console.log('Firebase initialized:', !!app);
-console.log('Storage connected:', !!storage);
-console.log('Bucket name:', rawBucket);
-
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await getDocFromServer(doc(db, 'website_settings', 'studio'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Notice: Firestore is running in offline mode.");
+      console.warn('Notice: Firestore is running in offline mode.');
     }
   }
 }
@@ -38,333 +81,113 @@ testConnection();
 
 let hasRunSeeding = false;
 
-// Seeding function for settings and initial wedding cards if needed
+/**
+ * Safely populates initial studio catalog & settings ONLY when collections are empty.
+ * Never overwrites existing Firestore documents.
+ */
 export async function seedDatabaseIfNeeded() {
-  if (hasRunSeeding) return;
+  if (!auth.currentUser || hasRunSeeding) return;
   hasRunSeeding = true;
 
   try {
-    const settingsDocRef = doc(db, 'settings', 'studio');
-    const websiteSettingsDocRef = doc(db, 'website_settings', 'studio');
+    // 1. Seed Website & Studio Settings only if missing
     const settingsSnap = await getDocs(query(collection(db, 'website_settings'), limit(1)));
-
     if (settingsSnap.empty) {
-      console.log('Seeding initial studio settings...');
       const batch = writeBatch(db);
-
       const defaultSettings = {
-        studioName: 'Shiv Studio & Printers',
+        studioName: 'SHIV STUDIO',
+        tagline: 'Capturing Moments, Creating Memories.',
+        creativeBrand: 'Arvind Creation',
+        instagramHandle: 'Shiv_photography_officel',
+        instagramUrl: 'https://www.instagram.com/Shiv_photography_officel/',
         phone: '+91 7905256355, +91 8765706396',
         email: 'shivsharan52796@gmail.com',
-        address: 'Kishanpur Road, Over Bridge ke Niche, Khaga, Fatehpur, Uttar Pradesh, India',
+        address: 'Kishanpur Road Over Bridge, Khaga, Fatehpur, Uttar Pradesh, India – 212655',
         gstNumber: '09AAAAA1111A1Z1',
         bankName: 'State Bank of India',
         bankAccount: '123456789012',
         bankIfsc: 'SBIN0001234',
+        upiId: 'shivsharan52796@okaxis',
         logoUrl: '',
-        heroTagline: 'Capturing Memories, Printing Excellence.',
-        heroTitle: 'Preserving Your Legacy, Printing Your Vision',
-        heroSubtitle: "Khaga's elite destination for cinematic wedding storytelling, high-end baby portfolios, and premium industrial press solutions.",
-        heroImageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=1600',
-        aboutTitle: 'Our Heritage in Fatehpur',
-        aboutDescription: 'Established over a decade ago in the commercial heart of Khaga, Fatehpur, Shiv Studio & Printers has been the absolute benchmark for bespoke pre-wedding masterworks, official event coverage, and premium wedding album creations. We deliver top-tier photography and print deliverables with certified materials and state-of-the-art equipment.',
-        aboutEst: 'Estd. 2018 | Khaga, Fatehpur',
-        aboutImageUrl: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=800',
-        aboutWeddingsCount: '1500+',
-        aboutHappyClients: '50k+',
-        welcomeText: 'Capturing Memories, Printing Excellence.',
-        socialFb: 'https://facebook.com',
-        socialIg: 'https://instagram.com',
-        socialYt: 'https://youtube.com',
-        themeColor: '#f59e0b',
-        footerText: 'Copyright © Shiv Studio & Printers. All Rights Reserved.',
-        seoTitle: 'Shiv Studio & Printers',
-        seoDescription: 'Photography Studio & Printing Press in Khaga, Fatehpur, Uttar Pradesh, India',
-        seoKeywords: 'Photography, Printing, Khaga, Fatehpur, Wedding, Album, Flex, Banner',
+        heroTagline: 'Capturing Moments, Creating Memories.',
+        heroTitle: 'WE CAPTURE YOUR BEST MOMENTS.',
+        heroSubtitle: 'Turning Your Precious Moments Into Timeless Memories.',
+        heroImageUrl: STUDIO_IMAGES.heroWedding,
+        aboutTitle: 'Crafting Timeless Visual Legacy in Khaga, Fatehpur',
+        aboutDescription:
+          'SHIV STUDIO is an established photography, cinematic filmmaking, album design, and custom print house in Khaga, Fatehpur. Together with our creative division Arvind Creation, we pair calibrated full-frame cameras and aerial cinema rigs with museum-grade photo frames and bespoke albums.',
+        aboutEst: 'Khaga, Fatehpur • Uttar Pradesh 212655',
+        aboutImageUrl: STUDIO_IMAGES.studioPortrait,
+        welcomeText: 'Capturing Moments, Creating Memories.',
+        socialIg: 'https://www.instagram.com/Shiv_photography_officel/',
+        themeColor: '#D4AF37',
+        footerText: '© SHIV STUDIO — Creative Brand: Arvind Creation. All Rights Reserved.',
+        seoTitle: 'SHIV STUDIO | Capturing Moments, Creating Memories — Khaga, Fatehpur',
+        seoDescription:
+          'SHIV STUDIO (Arvind Creation) — Wedding Photography, Pre-Wedding Shoots, Cinematic Videography, Drone Coverage, Custom Photo Frames & Albums in Khaga, Fatehpur UP 212655.',
+        seoKeywords: 'Shiv Studio, Khaga, Fatehpur, Wedding Photography, Pre-Wedding, Cinematic Video, Drone, Photo Frames, Album Design, Arvind Creation',
+        canonicalDomain: 'https://shiv-studio.vercel.app',
         officeHours: 'Monday - Sunday: 09:00 AM - 09:00 PM',
         whatsappNumber: '+917905256355',
-        googleMapUrl: 'https://maps.google.com/maps?q=Kishanpur%20Road,%20Khaga,%20Fatehpur,%20Uttar%20Pradesh&t=&z=15&ie=UTF8&iwloc=&output=embed'
+        googleMapUrl: 'https://maps.google.com/maps?q=Kishanpur%20Road,%20Khaga,%20Fatehpur,%20Uttar%20Pradesh%20212655&t=&z=15&ie=UTF8&iwloc=&output=embed',
+        googleBusinessUrl: 'https://maps.google.com/?q=Shiv+Studio+Khaga+Fatehpur+212655',
+        deliveryCharge: 150,
+        freeDeliveryThreshold: 1500,
+        instagramGallery: [
+          { id: 'ig_1', imageUrl: STUDIO_IMAGES.heroWedding, caption: 'Royal Mandap Portraits — Khaga', postUrl: 'https://www.instagram.com/Shiv_photography_officel/' },
+          { id: 'ig_2', imageUrl: STUDIO_IMAGES.preWedding, caption: 'Golden Hour Pre-Wedding Story', postUrl: 'https://www.instagram.com/Shiv_photography_officel/' },
+          { id: 'ig_3', imageUrl: STUDIO_IMAGES.engagementRing, caption: 'Ring Ceremony Fine Details', postUrl: 'https://www.instagram.com/Shiv_photography_officel/' },
+          { id: 'ig_4', imageUrl: STUDIO_IMAGES.luxuryAlbumFrame, caption: 'Arvind Creation Velvet Albums', postUrl: 'https://www.instagram.com/Shiv_photography_officel/' },
+          { id: 'ig_5', imageUrl: STUDIO_IMAGES.cinematicDrone, caption: '4K Gimbal & Aerial Drone Team', postUrl: 'https://www.instagram.com/Shiv_photography_officel/' },
+          { id: 'ig_6', imageUrl: STUDIO_IMAGES.maternityBaby, caption: 'Warm Studio Motherhood Session', postUrl: 'https://www.instagram.com/Shiv_photography_officel/' },
+        ]
       };
 
-      // Seed both collections to ensure compatibility with all queries
-      batch.set(settingsDocRef, defaultSettings);
-      batch.set(websiteSettingsDocRef, defaultSettings);
-
+      batch.set(doc(db, 'settings', 'studio'), defaultSettings);
+      batch.set(doc(db, 'website_settings', 'studio'), defaultSettings);
       await batch.commit();
-      console.log('Studio settings seeded successfully!');
     }
 
-    // Check if wedding_cards collection is empty
-    const weddingCardsSnap = await getDocs(query(collection(db, 'wedding_cards'), limit(1)));
-    if (weddingCardsSnap.empty) {
-      console.log('Seeding default Wedding Cards collection...');
+    // 2. Seed core Services only if collection is empty
+    const servicesSnap = await getDocs(query(collection(db, 'services'), limit(1)));
+    if (servicesSnap.empty) {
       const batch = writeBatch(db);
-
-      const sampleCards = [
-        {
-          id: 'wc_15602',
-          designCode: '15602',
-          name: 'Royal Regal Gold Foil Laser Cut Invitation',
-          category: 'Royal Laser Cut',
-          price: 65,
-          minOrderQuantity: 100,
-          paperType: '350 GSM Velvet Metallic Board',
-          printingType: 'Foil Stamping & Embossing',
-          size: '7.5 x 10.5 Inches',
-          description: 'Luxurious laser-cut wedding card with intricate gold foil peacock design, matching insert leaves and gold satin ribbon binding.',
-          isAvailable: true,
-          isFeatured: true,
-          color: 'Red',
-          mainImage: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_115002',
-          designCode: '115002',
-          name: 'Classic Golden Velvet Trunk Box Card',
-          category: 'Box Invitation',
-          price: 180,
-          minOrderQuantity: 50,
-          paperType: 'Velvet Board & Handmade Paper',
-          printingType: 'Screen Printing & UV Emboss',
-          size: '8 x 11 Inches',
-          description: 'Premium box style invitation card with velvet touch outer casing, acrylic Ganesh motif, and 3 scroll insert leaves.',
-          isAvailable: true,
-          isFeatured: true,
-          color: 'Gold',
-          mainImage: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_112402',
-          designCode: '112402',
-          name: 'Transparent Crystal Acrylic Modern Card',
-          category: 'Acrylic',
-          price: 120,
-          minOrderQuantity: 100,
-          paperType: '3mm Cast Acrylic & Gold Border Box',
-          printingType: 'Metallic Foil Printing',
-          size: '6 x 9 Inches',
-          description: 'State-of-the-art transparent acrylic card with high-definition gold foil printing and matching gold envelope.',
-          isAvailable: true,
-          isFeatured: true,
-          color: 'Gold',
-          mainImage: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_18002',
-          designCode: '18002',
-          name: 'Floral Garden Pastel Multi-Fold Card',
-          category: 'Floral',
-          price: 45,
-          minOrderQuantity: 100,
-          paperType: '300 GSM Textured Matt Board',
-          printingType: 'High-Def Digital & Gold Foil',
-          size: '7 x 10 Inches',
-          description: 'Contemporary pastel floral artwork with delicate gold foil highlights and multi-fold insert structure.',
-          isAvailable: true,
-          isFeatured: false,
-          color: 'Pink',
-          mainImage: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_114002',
-          designCode: '114002',
-          name: 'Traditional Indian Maroon Radha Krishna Card',
-          category: 'Traditional',
-          price: 35,
-          minOrderQuantity: 100,
-          paperType: 'Heavy Glossy Cardstock',
-          printingType: 'Screen Printing & Embossing',
-          size: '8 x 10 Inches',
-          description: 'Traditional wedding card with divine Radha Krishna painting, gold foil borders, and auspicious shloka motif.',
-          isAvailable: true,
-          isFeatured: false,
-          color: 'Maroon',
-          mainImage: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_113002',
-          designCode: '113002',
-          name: 'Single Sheet Minimalist Cream Gold Card',
-          category: 'Single Sheet',
-          price: 22,
-          minOrderQuantity: 200,
-          paperType: '280 GSM Ivory Cream Metallic',
-          printingType: 'Gold Foil Printing',
-          size: '5.5 x 8.5 Inches',
-          description: 'Elegantly styled single-sheet invitation card with die-cut envelope and golden floral motif.',
-          isAvailable: true,
-          isFeatured: false,
-          color: 'Cream',
-          mainImage: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_17002',
-          designCode: '17002',
-          name: 'Navy Royal Blue Laser Cut Peacock Card',
-          category: 'Royal Laser Cut',
-          price: 75,
-          minOrderQuantity: 100,
-          paperType: 'Shimmer Navy Blue Cardboard',
-          printingType: 'Laser Cutting & Foil Stamping',
-          size: '7 x 10 Inches',
-          description: 'Ornate navy blue laser cut wedding invitation with golden peacock feather pattern and inner gold insert.',
-          isAvailable: true,
-          isFeatured: true,
-          color: 'Blue',
-          mainImage: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_117002',
-          designCode: '117002',
-          name: 'Emerald Green Floral Gold Embossed Card',
-          category: 'Floral',
-          price: 55,
-          minOrderQuantity: 100,
-          paperType: 'Velvet Soft Touch Emerald Board',
-          printingType: 'UV Emboss & Gold Foil',
-          size: '7 x 10 Inches',
-          description: 'Deep emerald green velvet card adorned with gold foil botanical artwork and silk tassel.',
-          isAvailable: true,
-          isFeatured: false,
-          color: 'Green',
-          mainImage: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_122002',
-          designCode: '122002',
-          name: 'Grand Maharaja Velvet Hardbound Box Card',
-          category: 'Box Invitation',
-          price: 250,
-          minOrderQuantity: 50,
-          paperType: 'Rigid Wood & Premium Crimson Velvet',
-          printingType: 'Gold Foil Stamping & Brass Logo',
-          size: '9 x 12 Inches',
-          description: 'High-end royal box invitation crafted with velvet rigid frame, brass Ganesh emblem, and 4 wedding function inserts.',
-          isAvailable: true,
-          isFeatured: true,
-          color: 'Red',
-          mainImage: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_110002',
-          designCode: '110002',
-          name: 'Golden Mirror Acrylic Royal Card',
-          category: 'Acrylic',
-          price: 140,
-          minOrderQuantity: 100,
-          paperType: 'Mirror Finish Acrylic Board',
-          printingType: 'UV Print & Laser Engraving',
-          size: '6 x 9 Inches',
-          description: 'Reflective mirror finish golden acrylic card with laser engraved typography and velvet hardbound folder.',
-          isAvailable: true,
-          isFeatured: true,
-          color: 'Gold',
-          mainImage: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'wc_19002',
-          designCode: '19002',
-          name: 'Ivory Gold Paisley Laser Cut Folder Card',
-          category: 'Royal Laser Cut',
-          price: 60,
-          minOrderQuantity: 100,
-          paperType: '300 GSM Shimmer Ivory Board',
-          printingType: 'Laser Cut & Hot Foil Stamping',
-          size: '7.5 x 10 Inches',
-          description: 'Exquisite ivory folder with intricate paisley die-cut lace border and golden ribbon lock.',
-          isAvailable: true,
-          isFeatured: false,
-          color: 'Cream',
-          mainImage: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-          images: {
-            front: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
-            inside: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800',
-            back: 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800'
-          },
-          whatsappNumber: '+917905256355',
-          createdAt: new Date().toISOString()
-        }
-      ];
-
-      sampleCards.forEach((card) => {
-        batch.set(doc(db, 'wedding_cards', card.id), card);
+      getDefaultServicesForSeed().forEach((srv) => {
+        batch.set(doc(db, 'services', srv.id), srv);
       });
-
       await batch.commit();
-      console.log('Wedding Cards collection seeded successfully!');
+    }
+
+    // 3. Seed Packages only if collection is empty
+    const packagesSnap = await getDocs(query(collection(db, 'packages'), limit(1)));
+    if (packagesSnap.empty) {
+      const batch = writeBatch(db);
+      getDefaultPackagesForSeed().forEach((pkg) => {
+        batch.set(doc(db, 'packages', pkg.id), pkg);
+      });
+      await batch.commit();
+    }
+
+    // 4. Seed Gallery Showcase only if collection is empty
+    const gallerySnap = await getDocs(query(collection(db, 'gallery'), limit(1)));
+    if (gallerySnap.empty) {
+      const batch = writeBatch(db);
+      const initialGallery = [
+        { id: 'gal_wed_1', title: 'Royal Mandap Evening', category: 'Wedding', imageUrl: STUDIO_IMAGES.heroWedding, isFeatured: true, mediaType: 'photo', altText: 'Indian wedding bride and groom portrait under chandelier' },
+        { id: 'gal_pre_1', title: 'Palace Sunset Pre-Wedding', category: 'Pre-Wedding', imageUrl: STUDIO_IMAGES.preWedding, isFeatured: true, mediaType: 'photo', altText: 'Pre-wedding couple golden hour portrait' },
+        { id: 'gal_eng_1', title: 'Sacred Ring Exchange', category: 'Engagement', imageUrl: STUDIO_IMAGES.engagementRing, isFeatured: true, mediaType: 'photo', altText: 'Engagement ring ceremony close up' },
+        { id: 'gal_bday_1', title: 'Family Milestone Celebration', category: 'Birthday', imageUrl: STUDIO_IMAGES.birthdayEvent, isFeatured: false, mediaType: 'photo', altText: 'Birthday celebration family portrait' },
+        { id: 'gal_mat_1', title: 'Warm Motherhood Portrait', category: 'Maternity', imageUrl: STUDIO_IMAGES.maternityBaby, isFeatured: true, mediaType: 'photo', altText: 'Studio maternity and baby portrait' },
+        { id: 'gal_film_1', title: '4K Cinema & Drone Coverage', category: 'Cinematic Films', imageUrl: STUDIO_IMAGES.cinematicDrone, isFeatured: true, mediaType: 'photo', altText: 'Cinematic wedding gimbal and drone filming' },
+        { id: 'gal_alb_1', title: 'Arvind Creation Velvet Album', category: 'Album Designs', imageUrl: STUDIO_IMAGES.luxuryAlbumFrame, isFeatured: true, mediaType: 'photo', altText: 'Handcrafted black velvet gold foil photo album' },
+        { id: 'gal_evt_1', title: 'Khaga Studio Setup', category: 'Events', imageUrl: STUDIO_IMAGES.studioPortrait, isFeatured: false, mediaType: 'photo', altText: 'Shiv Studio Khaga interior and color suite' },
+      ];
+      initialGallery.forEach((g) => {
+        batch.set(doc(db, 'gallery', g.id), g);
+      });
+      await batch.commit();
     }
   } catch (err: any) {
-    console.warn('Notice (seedDatabaseIfNeeded): Seeding deferred (offline or network issue):', err?.message || err);
+    console.warn('Notice (seedDatabaseIfNeeded): Seeding deferred (permissions or offline):', err?.message || err);
   }
 }
-

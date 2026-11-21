@@ -36,6 +36,7 @@ export const OfferBannerDisplay: React.FC<OfferBannerDisplayProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [failedVideos, setFailedVideos] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -157,17 +158,22 @@ export const OfferBannerDisplay: React.FC<OfferBannerDisplayProps> = ({
       
       {/* Background Media: Video or Responsive Desktop/Mobile Images */}
       <div className="absolute inset-0 z-0 bg-slate-950">
-        {currentBanner.backgroundVideoUrl ? (
+        {currentBanner.backgroundVideoUrl && !failedVideos[currentBanner.backgroundVideoUrl] ? (
           <video
+            key={currentBanner.backgroundVideoUrl}
+            src={currentBanner.backgroundVideoUrl}
             autoPlay
             loop
             muted
             playsInline
             preload="metadata"
+            onError={() => {
+              if (currentBanner.backgroundVideoUrl) {
+                setFailedVideos(prev => ({ ...prev, [currentBanner.backgroundVideoUrl!]: true }));
+              }
+            }}
             className="w-full h-full object-cover opacity-40"
-          >
-            <source src={currentBanner.backgroundVideoUrl} type="video/mp4" />
-          </video>
+          />
         ) : (
           <picture className="w-full h-full block">
             {currentBanner.mobileImageUrl && (

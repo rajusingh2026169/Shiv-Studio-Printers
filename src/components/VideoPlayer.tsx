@@ -23,14 +23,36 @@ interface VideoPlayerProps {
   videoRefOut?: React.RefObject<HTMLVideoElement | null>;
 }
 
-const getVideoType = (url: string) => {
-  if (!url) return 'video/mp4';
-  const lower = url.toLowerCase();
-  if (lower.includes('.webm')) return 'video/webm';
-  if (lower.includes('.mov') || lower.includes('.quicktime')) return 'video/quicktime';
-  if (lower.includes('.ogg') || lower.includes('.ogv')) return 'video/ogg';
-  return 'video/mp4';
-};
+function getEmbedUrl(rawUrl: string): string | null {
+  try {
+    const url = rawUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+
+    // YouTube watch / short / shorts URLs
+    const ytMatch = url.match(
+      /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{6,})/
+    );
+    if (ytMatch && ytMatch[1]) {
+      return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0`;
+    }
+
+    // Vimeo
+    const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    if (vimeoMatch && vimeoMatch[1]) {
+      return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+    }
+
+    // Google Drive file preview
+    const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (driveMatch && driveMatch[1]) {
+      return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   src,
@@ -57,15 +79,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setError(null);
     setIsLoaded(false);
     setIsPlaying(false);
-    if (src) {
-      console.log(`[Video System] video URL loaded: ${src}`);
-    }
-    if (poster) {
-      console.log(`[Video System] thumbnail loaded: ${poster}`);
-    }
-    if (videoRef.current) {
-      videoRef.current.load();
-    }
   }, [src, poster]);
 
   const handlePlay = () => {
@@ -73,24 +86,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       videoRef.current.play()
         .then(() => {
           setIsPlaying(true);
-          console.log(`[Video System] Playback Started: ${src}`);
         })
         .catch((err) => {
           if (err.name === 'NotAllowedError') {
-            console.warn('[Video System] Autoplay restricted by browser, attempting muted playback:', err.message);
             if (videoRef.current) {
               videoRef.current.muted = true;
               setIsMuted(true);
               videoRef.current.play().then(() => {
                 setIsPlaying(true);
-              }).catch((mutedErr) => {
-                console.warn('[Video System] Muted autoplay also restricted:', mutedErr.message);
+              }).catch(() => {
                 setIsPlaying(false);
               });
             }
           } else {
-            console.error(`[Video System] playback errors:`, err?.message || err);
-            setError(`Playback failed: ${err.message || 'Error starting video playback'}`);
+            console.warn('[Video System] playback notice:', err?.message || 'Unable to start video playback');
+            setError(`Playback failed: ${err?.message || 'Error starting video playback'}`);
           }
         });
     }
@@ -171,14 +181,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }
 
   const cleanSrc = src.trim();
+  const embedSrc = getEmbedUrl(cleanSrc);
+
+  if (embedSrc) {
+    return (
+      <div className={`relative aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 ${className}`}>
+        <iframe
+          src={embedSrc}
+          title={title || 'SHIV STUDIO Film'}
+          className="w-full h-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`relative aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 group ${className}`}>
       {error ? (
-        <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
-          <AlertCircle className="w-10 h-10 text-rose-500" />
-          <p className="text-sm font-bold text-rose-400 max-w-md">{error}</p>
-          <div className="flex items-center gap-3 pt-1">
+        <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
+          {poster && (
+            <img
+              src={poster}
+              alt={title || 'Video Poster'}
+              className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none"
+            />
+          )}
+          <AlertCircle className="w-10 h-10 text-amber-400 relative z-10" />
+          <p className="text-sm font-bold text-slate-100 max-w-md relative z-10">{error}</p>
+          <p className="text-xs text-slate-400 max-w-md relative z-10">
+            This video format or external link could not be streamed inline. You can retry or open the direct file.
+          </p>
+          <div className="flex items-center gap-3 pt-1 relative z-10">
             <button
               type="button"
               onClick={() => {
@@ -215,7 +250,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         className="w-full h-full object-contain"
         onPlay={() => {
           setIsPlaying(true);
-          console.log(`[Video System] Playback Started: ${cleanSrc}`);
         }}
         onPause={() => setIsPlaying(false)}
         onEnded={() => {
@@ -223,32 +257,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           if (onEnded) onEnded();
         }}
         onError={(e) => {
-          const err = (e.target as HTMLVideoElement)?.error;
+          const mediaErr = (e.target as HTMLVideoElement)?.error;
           let msg = 'Unable to play video format or source URL.';
-          if (err) {
-            if (err.code === 4) {
+          if (mediaErr) {
+            if (mediaErr.code === 4) {
               msg = 'Video format not supported or source URL inaccessible.';
-            } else if (err.code === 3) {
+            } else if (mediaErr.code === 3) {
               msg = 'Media decoding failed.';
-            } else if (err.code === 2) {
+            } else if (mediaErr.code === 2) {
               msg = 'Network error during video download.';
-            } else if (err.code === 1) {
+            } else if (mediaErr.code === 1) {
               msg = 'Video playback aborted.';
             } else {
-              msg = err.message || 'Media element error';
+              msg = mediaErr.message || 'Media element error';
             }
           }
-          console.error('[Video System] playback errors:', msg, err);
-          setError(msg);
-        }}
-        onLoadedMetadata={(e) => {
-          const target = e.currentTarget;
-          console.log('[Video System] video metadata loaded:', {
-            duration: target.duration,
-            videoWidth: target.videoWidth,
-            videoHeight: target.videoHeight,
+          console.warn('[Video System] playback notice:', msg, {
+            code: mediaErr?.code,
+            message: mediaErr?.message,
             src: cleanSrc
           });
+          setError(msg);
+        }}
+        onLoadedMetadata={() => {
           setIsLoaded(true);
         }}
       >

@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { OfferBanner, BannerDisplayPosition } from '../types';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 
 const COLLECTION_NAME = 'offer_banners';
 
@@ -110,8 +111,8 @@ export async function saveOfferBanner(data: Partial<OfferBanner>): Promise<Offer
     title: data.title || 'Special Promotion',
     subtitle: data.subtitle || '',
     description: data.description || '',
-    desktopImageUrl: data.desktopImageUrl || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=1600',
-    mobileImageUrl: data.mobileImageUrl || data.desktopImageUrl || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800',
+    desktopImageUrl: data.desktopImageUrl || STUDIO_IMAGES.heroWedding,
+    mobileImageUrl: data.mobileImageUrl || data.desktopImageUrl || STUDIO_IMAGES.heroWedding,
     backgroundVideoUrl: data.backgroundVideoUrl || '',
     buttonText: data.buttonText || 'Claim Offer',
     buttonLink: data.buttonLink || '/store',

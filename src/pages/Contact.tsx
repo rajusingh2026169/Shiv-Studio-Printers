@@ -1,24 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Mail, Phone, MapPin, Clock, CheckCircle, Send } from 'lucide-react';
+import { SEOHead } from '../components/SEOHead';
+import { buildWhatsAppUrl } from '../components/WhatsAppButton';
+import { Mail, Phone, MapPin, Clock, CheckCircle, Send, Instagram, AlertCircle } from 'lucide-react';
 
 export const Contact: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [subject, setSubject] = useState('General Photography & Print Enquiry');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [submittedId, setSubmittedId] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   const [settings, setSettings] = useState<any>({
-    studioName: 'Shiv Studio & Printers',
+    studioName: 'SHIV STUDIO',
     phone: '+91 7905256355, +91 8765706396',
     email: 'shivsharan52796@gmail.com',
-    address: 'Kishanpur Road, Over Bridge ke Niche, Khaga, Fatehpur, Uttar Pradesh, India',
+    address: 'Kishanpur Road Over Bridge, Khaga, Fatehpur, Uttar Pradesh, India – 212655',
     officeHours: 'Monday - Sunday: 09:00 AM - 09:00 PM',
     whatsappNumber: '+917905256355',
-    googleMapUrl: 'https://maps.google.com/maps?q=Kishanpur%20Road,%20Khaga,%20Fatehpur,%20Uttar%20Pradesh&t=&z=15&ie=UTF8&iwloc=&output=embed'
+    instagramHandle: 'Shiv_photography_officel',
+    instagramUrl: 'https://www.instagram.com/Shiv_photography_officel/',
+    googleMapUrl:
+      'https://maps.google.com/maps?q=Kishanpur%20Road,%20Khaga,%20Fatehpur,%20Uttar%20Pradesh%20212655&t=&z=15&ie=UTF8&iwloc=&output=embed'
   });
 
   useEffect(() => {
@@ -28,8 +37,8 @@ export const Contact: React.FC = () => {
         if (settingsSnap.exists()) {
           setSettings((prev: any) => ({ ...prev, ...settingsSnap.data() }));
         }
-      } catch (err: any) {
-        console.warn('Notice (Contact): Offline mode or network issue, using default studio settings.');
+      } catch {
+        // Fallback smoothly
       }
     };
     fetchSettings();
@@ -37,202 +46,265 @@ export const Contact: React.FC = () => {
 
   const handleSubmitInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    if (submittingRef.current || loading) return;
+    setError('');
 
+    if (!fullName.trim() || !phone.trim() || !message.trim()) {
+      setError('Please enter your name, mobile number, and message.');
+      return;
+    }
+
+    submittingRef.current = true;
+    setLoading(true);
     try {
-      await addDoc(collection(db, 'inquiries'), {
-        fullName,
-        email,
-        phone,
-        message,
+      const enquiryNumber = `ENQ-${Math.floor(100000 + Math.random() * 900000)}`;
+      await setDoc(doc(db, 'inquiries', enquiryNumber), {
+        id: enquiryNumber,
+        enquiryNumber,
+        fullName: fullName.trim(),
+        name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        whatsappNumber: (whatsappNumber || phone).trim(),
+        subject,
+        message: message.trim(),
+        status: 'New',
         createdAt: new Date().toISOString()
       });
-      setSuccess(true);
+      setSubmittedId(enquiryNumber);
       setFullName('');
       setEmail('');
       setPhone('');
+      setWhatsappNumber('');
       setMessage('');
-    } catch (err) {
-      console.error('Error submitting contact query:', err);
-      alert('An error occurred. Please try again.');
+    } catch {
+      setError('Unable to send your enquiry right now. Please connect directly on WhatsApp.');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="bg-[#111111] min-h-screen text-white py-16 px-4 sm:px-6 lg:px-8">
+      <SEOHead
+        title="Contact Us — SHIV STUDIO Khaga, Fatehpur"
+        description="Contact SHIV STUDIO (Arvind Creation) at Kishanpur Road Over Bridge, Khaga, Fatehpur, Uttar Pradesh 212655 for photography bookings and custom printing."
+        canonicalPath="/contact"
+      />
+
       <div className="max-w-6xl mx-auto space-y-12">
-        
-        {/* Page Header */}
-        <div className="text-center space-y-3">
-          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider font-mono">
+        <div className="text-center max-w-2xl mx-auto space-y-3">
+          <p className="text-xs uppercase tracking-[0.25em] text-[#D4AF37] font-semibold">
             Get in Touch
-          </span>
-          <h1 className="text-3xl sm:text-5xl font-sans font-bold text-white tracking-tight">
-            Contact {settings.studioName}
+          </p>
+          <h1 className="font-display text-4xl sm:text-5xl font-semibold text-white">
+            Contact {settings.studioName || 'SHIV STUDIO'}
           </h1>
-          <p className="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
-            Reach out for custom canvas printing contracts, large event quotes, wedding portfolio collaborations, or Khaga studio booking assistance.
+          <p className="text-sm text-neutral-400 leading-relaxed">
+            Reach out for wedding availability, package quotes, album designing, video editing, or custom framed gifts in Khaga, Fatehpur.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
-          
-          {/* Form container */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider border-b border-slate-800 pb-3">
-              Drop an Instant Inquiry
-            </h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+          {/* Contact Form */}
+          <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6">
+            <h2 className="font-display text-2xl font-semibold text-white border-b border-white/10 pb-3">
+              Send an Enquiry
+            </h2>
 
-            {success ? (
+            {submittedId ? (
               <div className="text-center py-8 space-y-4">
-                <CheckCircle className="h-14 w-14 text-emerald-400 mx-auto animate-bounce" />
-                <h4 className="text-lg font-bold text-white">Inquiry Received!</h4>
-                <p className="text-slate-400 text-xs">
-                  We have forwarded your request to our production coordinator team. Expect a response within 3 hours.
+                <CheckCircle className="h-12 w-12 text-[#D4AF37] mx-auto" />
+                <h3 className="font-display text-2xl font-semibold text-white">
+                  Enquiry Submitted ({submittedId})
+                </h3>
+                <p className="text-xs text-neutral-400">
+                  Thank you for contacting SHIV STUDIO. Our team will respond promptly via call or WhatsApp.
                 </p>
                 <button
-                  onClick={() => setSuccess(false)}
-                  className="px-5 py-2.5 bg-slate-850 text-slate-300 rounded-xl hover:bg-slate-800 text-xs font-bold transition-all"
+                  onClick={() => setSubmittedId(null)}
+                  className="px-5 py-2.5 bg-[#111111] border border-white/15 text-white rounded-lg text-xs font-semibold"
                 >
-                  Write Another Message
+                  Send Another Message
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmitInquiry} className="space-y-4 text-xs font-sans">
+              <form onSubmit={handleSubmitInquiry} className="space-y-4 text-xs">
+                {error && (
+                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
-                  <label className="text-slate-400 font-semibold">Your Name</label>
+                  <label className="text-neutral-300 font-medium">Full Name *</label>
                   <input
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
-                    placeholder="e.g. Priyesh Vatsa"
+                    className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-[#D4AF37]"
+                    placeholder="Your name"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-slate-400 font-semibold">Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
-                      placeholder="e.g. design@domain.com"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-slate-400 font-semibold">Phone Number</label>
+                    <label className="text-neutral-300 font-medium">Mobile Number *</label>
                     <input
                       type="tel"
                       required
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
-                      placeholder="e.g. +91 9999999999"
+                      className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-[#D4AF37]"
+                      placeholder="+91 9876543210"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-neutral-300 font-medium">WhatsApp Number</label>
+                    <input
+                      type="tel"
+                      value={whatsappNumber}
+                      onChange={(e) => setWhatsappNumber(e.target.value)}
+                      className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-[#D4AF37]"
+                      placeholder="Same as mobile if blank"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-neutral-300 font-medium">Email (Optional)</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-[#D4AF37]"
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-neutral-300 font-medium">Subject</label>
+                    <input
+                      type="text"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-[#D4AF37]"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-slate-400 font-semibold">Detailed Message</label>
+                  <label className="text-neutral-300 font-medium">Message *</label>
                   <textarea
                     rows={4}
                     required
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500"
-                    placeholder="Describe your requested package detail, shoot size, custom prints size..."
-                  ></textarea>
+                    className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-[#D4AF37] resize-none"
+                    placeholder="Share your event dates, photography needs, or custom frame dimensions..."
+                  />
                 </div>
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-4 bg-amber-400 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-extrabold rounded-xl text-center text-xs tracking-wider transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-3.5 bg-[#D4AF37] hover:bg-[#E5C158] disabled:opacity-50 text-[#111111] font-semibold uppercase tracking-wider rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
-                  <Send className="h-4 w-4 shrink-0" />
-                  <span>{loading ? 'Transmitting inquiry...' : 'Send Inquiry To Directors'}</span>
+                  <Send className="h-4 w-4" />
+                  <span>{loading ? 'Sending Enquiry...' : 'Submit Enquiry'}</span>
                 </button>
               </form>
             )}
           </div>
 
-          {/* Location details card */}
-          <div className="space-y-8 text-xs sm:text-sm text-slate-400 font-sans">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider border-b border-slate-800 pb-3">
-                {settings.studioName} Locations
-              </h3>
+          {/* Location & Map */}
+          <div className="space-y-6 text-xs sm:text-sm">
+            <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-5">
+              <h2 className="font-display text-2xl font-semibold text-white border-b border-white/10 pb-3">
+                Studio Details
+              </h2>
 
-              <div className="space-y-5">
+              <div className="space-y-4 text-neutral-300">
                 <div className="flex items-start gap-3">
-                  <MapPin className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <MapPin className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">Main Studio & Printing Press</h4>
-                    <p className="mt-1">{settings.address}</p>
+                    <p className="font-semibold text-white">Studio Address</p>
+                    <p className="text-neutral-400 mt-0.5">{settings.address}</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <Phone className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <Phone className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">Mobile Numbers</h4>
-                    <p className="mt-1">{settings.phone}</p>
+                    <p className="font-semibold text-white">Phone &amp; WhatsApp</p>
+                    <p className="text-neutral-400 mt-0.5">{settings.phone}</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <Mail className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <Mail className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">Email Inbox</h4>
-                    <p className="mt-1">{settings.email}</p>
+                    <p className="font-semibold text-white">Email</p>
+                    <p className="text-neutral-400 mt-0.5 break-all">{settings.email}</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <Clock className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                  <Clock className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">Business Timings</h4>
-                    <p className="mt-1">{settings.officeHours}</p>
-                    <p className="text-amber-500 font-medium">Open 365 Days including National Holidays</p>
+                    <p className="font-semibold text-white">Working Hours</p>
+                    <p className="text-neutral-400 mt-0.5">{settings.officeHours}</p>
                   </div>
                 </div>
 
-                {/* Instant Action Buttons */}
-                <div className="pt-4 border-t border-slate-800 grid grid-cols-2 gap-3">
-                  <a
-                    href={`https://wa.me/${settings.whatsappNumber?.replace('+', '').replace(' ', '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-center text-xs tracking-wider transition-colors"
-                  >
-                    <span>WhatsApp Chat</span>
-                  </a>
-                  <a
-                    href={`mailto:${settings.email}`}
-                    className="flex items-center justify-center gap-2 py-3 bg-slate-850 hover:bg-slate-700 text-white font-bold rounded-xl text-center text-xs tracking-wider transition-colors"
-                  >
-                    <span>Email Us</span>
-                  </a>
+                <div className="flex items-start gap-3">
+                  <Instagram className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-white">Instagram</p>
+                    <a
+                      href={settings.instagramUrl || 'https://www.instagram.com/Shiv_photography_officel/'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#D4AF37] hover:underline mt-0.5 inline-block"
+                    >
+                      @{settings.instagramHandle || 'Shiv_photography_officel'}
+                    </a>
+                  </div>
                 </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 grid grid-cols-2 gap-3">
+                <a
+                  href={buildWhatsAppUrl(
+                    settings.whatsappNumber,
+                    'Hello SHIV STUDIO, I want to enquire from your Contact page.'
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] font-semibold rounded-lg text-center text-xs uppercase tracking-wider transition-colors"
+                >
+                  WhatsApp Studio
+                </a>
+                <a
+                  href={`tel:${settings.phone?.split(',')[0]?.trim() || '+917905256355'}`}
+                  className="py-3 bg-[#111111] hover:bg-white/10 border border-white/15 text-white font-semibold rounded-lg text-center text-xs uppercase tracking-wider transition-colors"
+                >
+                  Call Directly
+                </a>
               </div>
             </div>
 
-            {/* Embedded interactive maps coordinate representation */}
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden aspect-video relative">
+            <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl overflow-hidden aspect-video">
               <iframe
-                title="Headquarters Map Coordinate"
+                title="SHIV STUDIO Khaga Location Map"
                 src={settings.googleMapUrl}
-                className="w-full h-full border-0 grayscale opacity-80"
-                allowFullScreen={false}
+                className="w-full h-full border-0 opacity-90"
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
-              ></iframe>
+              />
             </div>
           </div>
         </div>

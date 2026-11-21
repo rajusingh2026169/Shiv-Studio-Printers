@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { WeddingCardItem } from '../types';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 import { ImageField } from './ImageField';
 import { 
   Plus, 
@@ -122,9 +123,9 @@ export const AdminWeddingCardManager: React.FC = () => {
       setIsFeatured(false);
       setWhatsappNumber('+917905256355');
 
-      setFrontImage('https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800');
-      setInsideImage('https://images.unsplash.com/photo-1607344645866-009c320c5ab8?auto=format&fit=crop&q=80&w=800');
-      setBackImage('https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&q=80&w=800');
+      setFrontImage(STUDIO_IMAGES.luxuryAlbumFrame);
+      setInsideImage(STUDIO_IMAGES.engagementRing);
+      setBackImage(STUDIO_IMAGES.heroWedding);
     }
     setShowModal(true);
   };
@@ -152,7 +153,7 @@ export const AdminWeddingCardManager: React.FC = () => {
     try {
       const cardId = editingCard ? editingCard.id : `wc_${cleanDesignCode.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
       
-      const mainImg = frontImage.trim() || insideImage.trim() || backImage.trim() || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800';
+      const mainImg = frontImage.trim() || insideImage.trim() || backImage.trim() || STUDIO_IMAGES.luxuryAlbumFrame;
 
       const payload: WeddingCardItem = {
         id: cardId,
@@ -337,7 +338,7 @@ export const AdminWeddingCardManager: React.FC = () => {
                 {/* Image Header */}
                 <div className="relative aspect-[4/3] bg-slate-950 overflow-hidden">
                   <img 
-                    src={card.mainImage || card.images?.front || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=800'} 
+                    src={card.mainImage || card.images?.front || STUDIO_IMAGES.luxuryAlbumFrame} 
                     alt={card.name} 
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     referrerPolicy="no-referrer"

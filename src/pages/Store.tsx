@@ -7,6 +7,8 @@ import { getProductImages } from '../utils/productService';
 import { getVideosForCategory } from '../utils/videoService';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
+import { SEOHead } from '../components/SEOHead';
+import { useAuth } from '../context/AuthContext';
 import { Star, Search, Filter, ShoppingCart, Heart, Eye, CheckCircle, Flame, Film, Image as ImageIcon, AlertCircle, Layers } from 'lucide-react';
 
 interface StoreProps {
@@ -16,6 +18,7 @@ interface StoreProps {
 }
 
 export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wishlist }) => {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -23,7 +26,7 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeError, setStoreError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<any>({ studioName: 'Shiv Studio & Printers' });
+  const [settings, setSettings] = useState<any>({ studioName: 'SHIV STUDIO' });
 
   const handleSelectProduct = async (product: ProductItem) => {
     setSelectedProduct(product);
@@ -115,21 +118,25 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
   const isProductInWishlist = (id: string) => wishlist.includes(id);
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 py-16 px-4 sm:px-6 lg:px-8">
+    <div className="bg-[#111111] min-h-screen text-white py-16 px-4 sm:px-6 lg:px-8">
+      <SEOHead
+        title="Photo Frames, Albums & Custom Gifts — SHIV STUDIO & Arvind Creation"
+        description="Order custom photo frames, LED frames, wedding albums, canvas prints, and personalized gifts from SHIV STUDIO (Arvind Creation) in Khaga, Fatehpur."
+      />
       <div className="max-w-7xl mx-auto space-y-12">
         
         <OfferBannerDisplay position="product_store" className="mb-6" />
 
         {/* Store Header */}
         <div className="text-center space-y-4">
-          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold uppercase tracking-wider">
-            Premium Handcrafted Merchandise
-          </span>
-          <h1 className="text-3xl sm:text-5xl font-sans font-bold text-white tracking-tight">
-            E-Store & Personalized Gift Items
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#D4AF37]">
+            Arvind Creation — Custom Print & Merchandise
+          </p>
+          <h1 className="font-serif text-3xl sm:text-5xl font-semibold text-white tracking-tight">
+            Photo Frames, Albums & Custom Gifts
           </h1>
-          <p className="max-w-2xl mx-auto text-slate-400 text-sm sm:text-base leading-relaxed">
-            Order custom photo albums, thermo-sensitive magic mugs, LED frames, or canvas wraps. Add designs and get premium-quality deliverables dispatched.
+          <p className="max-w-2xl mx-auto text-neutral-400 text-sm sm:text-base leading-relaxed">
+            Order custom photo frames with multiple size options, velvet wedding albums, thermo-sensitive mugs, LED frames, and canvas wraps crafted in Khaga.
           </p>
         </div>
 
@@ -179,24 +186,33 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
         ) : loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="bg-slate-900 h-96 rounded-2xl animate-pulse border border-slate-800"></div>
+              <div key={n} className="bg-[#1A1A1A] h-96 rounded-2xl border border-white/10"></div>
             ))}
           </div>
         ) : products.length === 0 ? (
-          <div className="text-center py-20 bg-slate-900 rounded-3xl border border-slate-800 p-8 space-y-6 max-w-xl mx-auto">
-            <div className="mx-auto w-16 h-16 bg-amber-500/10 border border-amber-500/25 rounded-full flex items-center justify-center">
-              <ShoppingCart className="h-8 w-8 text-amber-500" />
+          <div className="text-center py-20 bg-[#1A1A1A] rounded-3xl border border-white/10 p-8 space-y-6 max-w-xl mx-auto">
+            <div className="mx-auto w-16 h-16 bg-[#D4AF37]/10 border border-[#D4AF37]/25 rounded-full flex items-center justify-center">
+              <ShoppingCart className="h-8 w-8 text-[#D4AF37]" />
             </div>
             <div className="space-y-2">
               <h3 className="text-xl font-bold text-white">No Products Available</h3>
-              <p className="text-sm text-slate-400">Our custom photo frames, albums, and personalized merchandise are currently being prepared.</p>
+              <p className="text-sm text-neutral-400">Our custom photo frames, albums, and personalized gifts are being updated.</p>
             </div>
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center space-x-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-5 py-3 rounded-xl text-xs sm:text-sm transition-all animate-bounce"
-            >
-              <span>Add New Product (Admin)</span>
-            </Link>
+            {isAdmin() ? (
+              <Link
+                to="/admin/dashboard"
+                className="inline-flex items-center space-x-2 bg-[#D4AF37] hover:bg-[#c5a028] text-[#111111] font-bold px-5 py-3 rounded-xl text-xs sm:text-sm transition-colors"
+              >
+                <span>Add Product in Admin Panel</span>
+              </Link>
+            ) : (
+              <Link
+                to="/contact"
+                className="inline-flex items-center space-x-2 bg-[#D4AF37] hover:bg-[#c5a028] text-[#111111] font-bold px-5 py-3 rounded-xl text-xs sm:text-sm transition-colors"
+              >
+                <span>Enquire About Custom Framing</span>
+              </Link>
+            )}
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-20 text-slate-500 text-xs sm:text-sm">
