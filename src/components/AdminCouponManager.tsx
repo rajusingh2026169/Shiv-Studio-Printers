@@ -10,7 +10,8 @@ import {
   query, 
   orderBy 
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, OperationType, handleFirestoreError } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import { Coupon, CouponUsage, ProductItem, ServiceItem, DiscountType, ApplicableOnType } from '../types';
 import { 
   Ticket, 
@@ -48,6 +49,7 @@ export const AdminCouponManager: React.FC<AdminCouponManagerProps> = ({
   services = [],
   onTriggerConfirm
 }) => {
+  const { currentUser, userProfile, isAdmin } = useAuth();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [usages, setUsages] = useState<CouponUsage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,27 +113,44 @@ export const AdminCouponManager: React.FC<AdminCouponManagerProps> = ({
 
       setCoupons(list);
       setLoading(false);
-    }, (err) => {
+    }, (err: any) => {
       console.error('Error fetching coupons:', err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'coupons');
+        } catch {
+          // Structured error logged
+        }
+      }
       setLoading(false);
     });
 
-    const unsubUsages = onSnapshot(usagesRef, (snapshot) => {
-      const list: CouponUsage[] = [];
-      snapshot.forEach((docSnap) => {
-        list.push({ id: docSnap.id, ...docSnap.data() } as CouponUsage);
-      });
-      list.sort((a, b) => new Date(b.usedAt || 0).getTime() - new Date(a.usedAt || 0).getTime());
-      setUsages(list);
-    }, (err) => {
-      console.error('Error fetching coupon usages:', err);
-    });
+    const unsubUsages =
+      currentUser && isAdmin()
+        ? onSnapshot(usagesRef, (snapshot) => {
+            const list: CouponUsage[] = [];
+            snapshot.forEach((docSnap) => {
+              list.push({ id: docSnap.id, ...docSnap.data() } as CouponUsage);
+            });
+            list.sort((a, b) => new Date(b.usedAt || 0).getTime() - new Date(a.usedAt || 0).getTime());
+            setUsages(list);
+          }, (err: any) => {
+            console.error('Error fetching coupon usages:', err);
+            if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+              try {
+                handleFirestoreError(err, OperationType.LIST, 'coupon_usages');
+              } catch {
+                // Structured error logged
+              }
+            }
+          })
+        : () => {};
 
     return () => {
       unsubCoupons();
       unsubUsages();
     };
-  }, []);
+  }, [currentUser, userProfile]);
 
   // Helper date formatter for datetime-local inputs
   const toDatetimeLocal = (isoStr?: string) => {

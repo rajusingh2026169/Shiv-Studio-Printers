@@ -40,17 +40,24 @@ export const OrderMessageModal: React.FC<OrderMessageModalProps> = ({
   useEffect(() => {
     if (!isOpen || !order?.id) return;
 
+    const scopedCustomerId =
+      currentSenderType === 'customer' ? (currentUserId || order.customerId) : undefined;
+
     // Mark messages as read when modal opens
-    markOrderMessagesAsRead(order.id, currentSenderType);
+    markOrderMessagesAsRead(order.id, currentSenderType, scopedCustomerId);
 
     // Listen to real-time messages for this order
-    const unsubscribe = listenOrderMessages(order.id, (fetchedMessages) => {
-      setMessages(fetchedMessages);
-      markOrderMessagesAsRead(order.id, currentSenderType);
-    });
+    const unsubscribe = listenOrderMessages(
+      order.id,
+      (fetchedMessages) => {
+        setMessages(fetchedMessages);
+        markOrderMessagesAsRead(order.id, currentSenderType, scopedCustomerId);
+      },
+      scopedCustomerId
+    );
 
     return () => unsubscribe();
-  }, [isOpen, order?.id, currentSenderType]);
+  }, [isOpen, order?.id, order?.customerId, currentSenderType, currentUserId]);
 
   useEffect(() => {
     if (messagesEndRef.current) {

@@ -1,5 +1,5 @@
 import { collection, query, where, getDocs, doc, updateDoc, increment, addDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, OperationType, handleFirestoreError } from '../firebase';
 import { Coupon, CouponUsage, CouponValidationResult } from '../types';
 
 /**
@@ -379,8 +379,15 @@ export async function redeemCoupon(
       discountAmount: discountAmount || 0,
       usedAt: new Date().toISOString()
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to record coupon redemption:', err);
+    if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+      try {
+        handleFirestoreError(err, OperationType.WRITE, `coupons/${coupon.id}`);
+      } catch {
+        // Structured error logged
+      }
+    }
   }
 }
 

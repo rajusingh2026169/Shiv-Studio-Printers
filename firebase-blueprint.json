@@ -17,7 +17,10 @@
         },
         "address": { "type": "string", "maxLength": 500 },
         "avatarUrl": { "type": "string", "maxLength": 2048 },
-        "createdAt": { "type": "string", "maxLength": 64 }
+        "photoURL": { "type": "string", "maxLength": 2048 },
+        "displayName": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["uid", "email", "fullName", "role", "createdAt"]
     },
@@ -238,7 +241,8 @@
         },
         "photographerId": { "type": "string", "maxLength": 128 },
         "photographerName": { "type": "string", "maxLength": 160 },
-        "createdAt": { "type": "string", "maxLength": 64 }
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "customerId", "customerName", "customerPhone", "serviceId", "serviceTitle", "date", "location", "status", "createdAt"]
     },
@@ -267,7 +271,8 @@
           "type": "string",
           "enum": ["Pending", "Accepted", "Designing", "Printing", "Ready", "Shipped", "Delivered", "Cancelled"]
         },
-        "createdAt": { "type": "string", "maxLength": 64 }
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "customerId", "customerName", "customerPhone", "items", "address", "subtotal", "total", "status", "createdAt"]
     },
@@ -470,7 +475,37 @@
         "canonicalDomain": { "type": "string", "maxLength": 256 },
         "seoTitle": { "type": "string", "maxLength": 250 },
         "seoDescription": { "type": "string", "maxLength": 600 },
-        "seoKeywords": { "type": "string", "maxLength": 600 }
+        "seoKeywords": { "type": "string", "maxLength": 600 },
+        "logoUrl": { "type": "string", "maxLength": 2048 },
+        "faviconUrl": { "type": "string", "maxLength": 2048 },
+        "googleMapUrl": { "type": "string", "maxLength": 2048 },
+        "googleBusinessUrl": { "type": "string", "maxLength": 2048 },
+        "officeHours": { "type": "string", "maxLength": 160 },
+        "heroTagline": { "type": "string", "maxLength": 250 },
+        "heroTitle": { "type": "string", "maxLength": 300 },
+        "heroSubtitle": { "type": "string", "maxLength": 500 },
+        "heroImageUrl": { "type": "string", "maxLength": 2048 },
+        "aboutTitle": { "type": "string", "maxLength": 300 },
+        "aboutDescription": { "type": "string", "maxLength": 5000 },
+        "aboutEst": { "type": "string", "maxLength": 200 },
+        "aboutImageUrl": { "type": "string", "maxLength": 2048 },
+        "aboutWeddingsCount": { "type": "string", "maxLength": 80 },
+        "aboutHappyClients": { "type": "string", "maxLength": 80 },
+        "welcomeText": { "type": "string", "maxLength": 300 },
+        "socialIg": { "type": "string", "maxLength": 500 },
+        "socialFb": { "type": "string", "maxLength": 500 },
+        "socialYt": { "type": "string", "maxLength": 500 },
+        "themeColor": { "type": "string", "maxLength": 40 },
+        "footerText": { "type": "string", "maxLength": 500 },
+        "deliveryCharge": { "type": "number" },
+        "freeDeliveryThreshold": { "type": "number" },
+        "instagramGallery": { "type": "array" },
+        "team": { "type": "array" },
+        "categoryImages": { "type": "object" },
+        "gstEnabled": { "type": "boolean" },
+        "gstPercentage": { "type": "number" },
+        "defaultGstPercent": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["studioName", "phone", "email", "address"]
     },
@@ -482,7 +517,9 @@
         "url": { "type": "string", "maxLength": 2048 },
         "path": { "type": "string", "maxLength": 500 },
         "category": { "type": "string", "maxLength": 80 },
-        "uploadedAt": { "type": "string", "maxLength": 64 }
+        "uploadedAt": { "type": "string", "maxLength": 64 },
+        "originalName": { "type": "string", "maxLength": 300 },
+        "compressed": { "type": "boolean" }
       },
       "required": ["url", "path", "uploadedAt"]
     },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../firebase';
+import { db, OperationType, handleFirestoreError } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { ImageField } from './ImageField';
 import { UserCheck, ShieldCheck, LogOut, Save, Loader2, CheckCircle2 } from 'lucide-react';
@@ -33,24 +33,35 @@ export const AdminProfilePanel: React.FC = () => {
     setNotice(null);
 
     try {
+      const cleanName = fullName.trim() || 'SHIV STUDIO Admin';
       await setDoc(
         doc(db, 'users', currentUser.uid),
         {
           uid: currentUser.uid,
           email: currentUser.email || userProfile?.email || '',
-          fullName: fullName.trim() || 'SHIV STUDIO Admin',
+          fullName: cleanName,
+          name: cleanName,
           phone: phone.trim(),
+          mobile: phone.trim(),
           address: address.trim(),
           avatarUrl: avatarUrl || '',
           role: userProfile?.role || 'Admin',
-          createdAt: userProfile?.createdAt || new Date().toISOString()
+          createdAt: userProfile?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         },
         { merge: true }
       );
       await refreshProfile();
       setNotice('Administrator profile updated successfully.');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving admin profile:', err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.WRITE, `users/${currentUser.uid}`);
+        } catch {
+          // Structured error logged
+        }
+      }
       setNotice('Could not save profile changes. Check permissions.');
     } finally {
       setSaving(false);

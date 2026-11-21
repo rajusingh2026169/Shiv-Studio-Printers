@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { db, seedDatabaseIfNeeded } from '../../firebase';
+import { db, seedDatabaseIfNeeded, OperationType, handleFirestoreError } from '../../firebase';
 import { Order, Booking, ProductItem, Expense, ServiceItem, GalleryItem, OfferItem, ReviewItem, UserProfile, BlogItem } from '../../types';
 import { STUDIO_IMAGES } from '../../assets/studioAssets';
 import { buildWhatsAppUrl } from '../../components/WhatsAppButton';
@@ -58,7 +58,19 @@ import {
 const ENABLE_VIDEO_MANAGEMENT = true;
 
 export const AdminDashboard: React.FC = () => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, userProfile, isAdmin, logout } = useAuth();
+
+  const reportPermissionError = (err: unknown, op: OperationType, path: string) => {
+    const code = (err as { code?: string })?.code;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (code === 'permission-denied' || msg.includes('Missing or insufficient permissions')) {
+      try {
+        handleFirestoreError(err, op, path);
+      } catch {
+        // Structured FirestoreErrorInfo logged to console
+      }
+    }
+  };
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -296,6 +308,8 @@ export const AdminDashboard: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
+    if (!currentUser || !isAdmin()) return;
+
     seedDatabaseIfNeeded().catch(() => {});
     autoMigrateExistingProducts().catch(err => console.error(err));
     fetchDashboardData();
@@ -311,6 +325,7 @@ export const AdminDashboard: React.FC = () => {
       setProducts(loaded);
     }, (err) => {
       console.error('[Data Source Error] Admin products listener error:', err);
+      reportPermissionError(err, OperationType.LIST, 'products');
     });
 
     // Subscribe to unread messages from customers
@@ -325,13 +340,14 @@ export const AdminDashboard: React.FC = () => {
       setUnreadOrderMap(map);
     }, (err) => {
       console.warn('Unread messages listener error:', err);
+      reportPermissionError(err, OperationType.LIST, 'messages');
     });
 
     return () => {
       unsubscribeProducts();
       unsubscribeMessages();
     };
-  }, [currentUser]);
+  }, [currentUser, userProfile]);
 
   const fetchDashboardData = async () => {
     try {
@@ -380,6 +396,7 @@ export const AdminDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
+      reportPermissionError(err, OperationType.LIST, 'admin-dashboard');
     }
   };
 
@@ -398,14 +415,17 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     setIsSavingSettings(true);
     try {
+      const payload = { ...settings, updatedAt: new Date().toISOString() };
       await Promise.all([
-        setDoc(doc(db, 'website_settings', 'studio'), settings),
-        setDoc(doc(db, 'settings', 'studio'), settings)
+        setDoc(doc(db, 'website_settings', 'studio'), payload, { merge: true }),
+        setDoc(doc(db, 'settings', 'studio'), payload, { merge: true })
       ]);
+      setSettings(payload);
       alert('Website Settings updated successfully! Refresh the page to see live updates.');
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'website_settings/studio');
       alert('Error updating settings.');
     } finally {
       setIsSavingSettings(false);
@@ -421,6 +441,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.UPDATE, `bookings/${bookingId}`);
     }
   };
 
@@ -437,6 +458,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.UPDATE, `bookings/${bookingId}`);
     }
   };
 
@@ -449,6 +471,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.UPDATE, `orders/${orderId}`);
     }
   };
 
@@ -711,6 +734,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'products');
       alert('Error saving product: ' + (err as any).message);
     } finally {
       setIsSavingProduct(false);
@@ -877,6 +901,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `products/${prodId}`);
         }
       }
     );
@@ -924,6 +949,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'services');
     } finally {
       setIsSavingService(false);
     }
@@ -939,6 +965,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `services/${servId}`);
         }
       }
     );
@@ -966,6 +993,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'gallery');
     } finally {
       setIsSavingGallery(false);
     }
@@ -982,6 +1010,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `gallery/${gId}`);
         }
       }
     );
@@ -1008,6 +1037,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'offers');
     } finally {
       setIsSavingOffer(false);
     }
@@ -1023,6 +1053,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `offers/${offId}`);
         }
       }
     );
@@ -1052,6 +1083,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'reviews');
     } finally {
       setIsSavingReview(false);
     }
@@ -1067,6 +1099,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `reviews/${revId}`);
         }
       }
     );
@@ -1095,6 +1128,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.WRITE, 'blogs');
       alert('Failed to save blog article.');
     } finally {
       setIsSavingBlog(false);
@@ -1112,6 +1146,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `blogs/${blogId}`);
           alert('Failed to delete blog.');
         }
       }
@@ -1160,6 +1195,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.CREATE, 'expenses');
     }
   };
 
@@ -1171,6 +1207,7 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.UPDATE, `users/${uid}`);
     }
   };
 
@@ -1184,6 +1221,7 @@ export const AdminDashboard: React.FC = () => {
       setInquiries((prev) => prev.map((item) => (item.id === inqId ? { ...item, status } : item)));
     } catch (err) {
       console.error(err);
+      reportPermissionError(err, OperationType.UPDATE, `inquiries/${inqId}`);
     }
   };
 
@@ -1197,6 +1235,7 @@ export const AdminDashboard: React.FC = () => {
           fetchDashboardData();
         } catch (err) {
           console.error(err);
+          reportPermissionError(err, OperationType.DELETE, `inquiries/${inqId}`);
         }
       }
     );

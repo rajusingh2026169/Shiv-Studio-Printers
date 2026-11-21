@@ -2,11 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { UserProfile, UserRole } from '../types';
 
@@ -15,6 +17,7 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<FirebaseUser>;
   register: (email: string, password: string, fullName: string, phone: string, address?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -26,7 +29,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTHORIZED_ADMIN_EMAILS = ['arvindmaurya212655@gmail.com'];
+export const AUTHORIZED_ADMIN_EMAILS = ['arvindmaurya212655@gmail.com'];
 
 export function isAdminRoleValue(role?: string | null): boolean {
   return role === 'admin' || role === 'Admin' || role === 'Super Admin';
@@ -69,6 +72,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signInWithEmailAndPassword(auth, email.trim(), password);
   };
 
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const credential = await signInWithPopup(auth, provider);
+    return credential.user;
+  };
+
   const logout = async () => {
     await signOut(auth);
     setUserProfile(null);
@@ -97,6 +107,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const rawRole = data.role as UserRole;
         const resolvedRole: UserRole =
           isBootstrapAdmin || isAdminRoleValue(rawRole) ? 'admin' : rawRole || 'customer';
+
+        if (isBootstrapAdmin && !isAdminRoleValue(rawRole)) {
+          try {
+            await updateDoc(docRef, { role: 'admin' });
+          } catch {
+            // Best-effort sync for bootstrapped admin
+          }
+        }
 
         const profile: UserProfile = {
           uid: user.uid,
@@ -130,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       console.warn('Notice (AuthContext): Using minimal fallback profile:', err?.message || err);
       const userEmail = (user.email || '').toLowerCase();
-      const isBootstrapAdmin = AUTHORIZED_ADMIN_EMAILS.includes(userEmail);
+      const isBootstrapAdmin = AUTHORIZED_ADMIN_EMAILS.includes(userEmail) && user.emailVerified;
       setUserProfile({
         uid: user.uid,
         email: user.email || '',
@@ -176,6 +194,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userProfile,
         loading,
         login,
+        loginWithGoogle,
         register,
         logout,
         refreshProfile,

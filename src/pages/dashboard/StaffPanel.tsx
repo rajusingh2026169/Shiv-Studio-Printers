@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { db, OperationType, handleFirestoreError } from '../../firebase';
 import { Order } from '../../types';
 import { Layers, Printer, ArrowRight, CheckCircle, FileText, Download, FolderArchive } from 'lucide-react';
 import { downloadOriginalFile } from '../../utils/clientPhotoUploader';
@@ -97,8 +97,15 @@ export const StaffPanel: React.FC = () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'orders'));
       setOrders(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching staff orders:', err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'orders');
+        } catch {
+          // Structured error logged
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -118,8 +125,15 @@ export const StaffPanel: React.FC = () => {
     try {
       await updateDoc(doc(db, 'orders', orderId), { status: nextStatus });
       fetchOrders();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
+        } catch {
+          // Structured error logged
+        }
+      }
     }
   };
 

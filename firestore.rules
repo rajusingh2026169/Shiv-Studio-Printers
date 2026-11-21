@@ -63,17 +63,23 @@ service cloud.firestore {
     // 3. Entity Validation Blueprints
     function isValidUserProfile(data) {
       return data.keys().hasAll(['uid', 'email', 'fullName', 'role', 'createdAt']) &&
-        data.keys().hasOnly(['uid', 'email', 'fullName', 'name', 'phone', 'mobile', 'role', 'address', 'avatarUrl', 'createdAt']) &&
+        data.keys().hasOnly([
+          'uid', 'email', 'fullName', 'name', 'displayName', 'phone', 'mobile',
+          'role', 'address', 'avatarUrl', 'photoURL', 'createdAt', 'updatedAt'
+        ]) &&
         data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
         data.email is string && data.email.size() <= 254 &&
         data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 150 &&
         (!('name' in data) || (data.name is string && data.name.size() <= 150)) &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 150)) &&
         (!('phone' in data) || (data.phone is string && data.phone.size() <= 40)) &&
         (!('mobile' in data) || (data.mobile is string && data.mobile.size() <= 40)) &&
         data.role in ['admin', 'customer', 'Super Admin', 'Admin', 'Photographer', 'Designer', 'Printing Staff', 'Customer'] &&
         (!('address' in data) || (data.address is string && data.address.size() <= 500)) &&
         (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 2048)) &&
-        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2048)) &&
+        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64 &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
     function isValidService(data) {
@@ -161,7 +167,7 @@ service cloud.firestore {
           'costPrice', 'stock', 'GST', 'gstPercent', 'hsnCode', 'finalPrice', 'tags', 'status', 'rating',
           'reviewsCount', 'userId', 'brand', 'unit', 'minStockAlert', 'trackInventory', 'enableGst',
           'gstIncludedInPrice', 'enableShipping', 'freeShipping', 'shippingCharge', 'specifications',
-          'variants', 'enableVariants', 'customization', 'delivery', 'seo', 'labels', '_migrated'
+          'variants', 'enableVariants', 'customization', 'delivery', 'seo', 'labels', '_migrated', 'createdAt', 'updatedAt'
         ]) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 250 &&
@@ -171,7 +177,9 @@ service cloud.firestore {
         (!('description' in data) || (data.description is string && data.description.size() <= 10000)) &&
         (!('shortDescription' in data) || (data.shortDescription is string && data.shortDescription.size() <= 1000)) &&
         (!('variants' in data) || (data.variants is list && data.variants.size() <= 40 && (data.variants.size() == 0 || data.variants[0] is map))) &&
-        (!('tags' in data) || (data.tags is list && data.tags.size() <= 20 && (data.tags.size() == 0 || data.tags[0] is string)));
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 20 && (data.tags.size() == 0 || data.tags[0] is string))) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
     function isValidProductImage(data) {
@@ -202,7 +210,7 @@ service cloud.firestore {
           'serviceId', 'serviceTitle', 'packageId', 'packageName', 'eventType', 'date', 'time', 'location',
           'notes', 'advancePaid', 'totalPrice', 'gstEnabled', 'gstPercentage', 'gstAmount',
           'paymentMethod', 'paymentStatus', 'paymentDate', 'dueAmount', 'status',
-          'photographerId', 'photographerName', 'createdAt'
+          'photographerId', 'photographerName', 'createdAt', 'updatedAt'
         ]) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
         data.customerId is string && data.customerId.size() > 0 && data.customerId.size() <= 128 &&
@@ -216,7 +224,8 @@ service cloud.firestore {
         data.location is string && data.location.size() <= 400 &&
         (!('notes' in data) || (data.notes is string && data.notes.size() <= 3000)) &&
         data.status in ['New', 'Pending', 'Contacted', 'Discussion', 'Confirmed', 'Approved', 'Completed', 'Cancelled'] &&
-        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64 &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
     function isValidOrder(data) {
@@ -227,7 +236,7 @@ service cloud.firestore {
           'subtotal', 'gst', 'shipping', 'discount', 'couponCode', 'couponName', 'discountAmount',
           'discountType', 'discountValue', 'originalPrice', 'finalPrice', 'paymentAmount', 'total',
           'gstEnabled', 'gstPercentage', 'gstAmount', 'paymentMethod', 'paymentStatus', 'paymentDate',
-          'advancePaid', 'dueAmount', 'status', 'paymentId', 'createdAt'
+          'advancePaid', 'dueAmount', 'status', 'paymentId', 'createdAt', 'updatedAt'
         ]) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
         data.customerId is string && data.customerId.size() > 0 && data.customerId.size() <= 128 &&
@@ -241,7 +250,8 @@ service cloud.firestore {
         data.subtotal is number && data.subtotal >= 0 &&
         data.total is number && data.total >= 0 &&
         data.status in ['Pending', 'Accepted', 'Designing', 'Printing', 'Ready', 'Shipped', 'Delivered', 'Cancelled'] &&
-        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64 &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
     function isValidExpense(data) {
@@ -383,23 +393,31 @@ service cloud.firestore {
           'address', 'gstNumber', 'bankName', 'bankAccount', 'bankIfsc', 'upiId', 'logoUrl', 'faviconUrl',
           'whatsappNumber', 'googleMapUrl', 'googleBusinessUrl', 'officeHours', 'heroTagline', 'heroTitle',
           'heroSubtitle', 'heroImageUrl', 'aboutTitle', 'aboutDescription', 'aboutEst', 'aboutImageUrl',
-          'welcomeText', 'socialIg', 'themeColor', 'footerText', 'seoTitle', 'seoDescription', 'seoKeywords',
-          'canonicalDomain', 'deliveryCharge', 'freeDeliveryThreshold', 'instagramGallery', 'team', 'categoryImages'
+          'aboutWeddingsCount', 'aboutHappyClients', 'welcomeText', 'socialIg', 'socialFb', 'socialYt',
+          'themeColor', 'footerText', 'seoTitle', 'seoDescription', 'seoKeywords',
+          'canonicalDomain', 'deliveryCharge', 'freeDeliveryThreshold', 'instagramGallery', 'team', 'categoryImages',
+          'gstEnabled', 'gstPercentage', 'defaultGstPercent', 'updatedAt'
         ]) &&
         data.studioName is string && data.studioName.size() <= 160 &&
         data.phone is string && data.phone.size() <= 100 &&
         data.email is string && data.email.size() <= 254 &&
         data.address is string && data.address.size() <= 600 &&
+        (!('aboutWeddingsCount' in data) || (data.aboutWeddingsCount is string && data.aboutWeddingsCount.size() <= 80)) &&
+        (!('aboutHappyClients' in data) || (data.aboutHappyClients is string && data.aboutHappyClients.size() <= 80)) &&
+        (!('socialFb' in data) || (data.socialFb is string && data.socialFb.size() <= 500)) &&
+        (!('socialYt' in data) || (data.socialYt is string && data.socialYt.size() <= 500)) &&
         (!('instagramGallery' in data) || (data.instagramGallery is list && data.instagramGallery.size() <= 24 && (data.instagramGallery.size() == 0 || data.instagramGallery[0] is map)));
     }
 
     function isValidUploadedImage(data) {
       return data.keys().hasAll(['url', 'path', 'uploadedAt']) &&
-        data.keys().hasOnly(['url', 'path', 'category', 'uploadedAt']) &&
+        data.keys().hasOnly(['url', 'path', 'category', 'uploadedAt', 'originalName', 'compressed']) &&
         data.url is string && data.url.size() <= 2048 &&
         data.path is string && data.path.size() <= 500 &&
         (!('category' in data) || (data.category is string && data.category.size() <= 80)) &&
-        data.uploadedAt is string && data.uploadedAt.size() <= 64;
+        data.uploadedAt is string && data.uploadedAt.size() <= 64 &&
+        (!('originalName' in data) || (data.originalName is string && data.originalName.size() <= 300)) &&
+        (!('compressed' in data) || data.compressed is bool);
     }
 
     // 4. Collection Rules (25 Active Collections)
@@ -420,7 +438,7 @@ service cloud.firestore {
             isOwner(userId) &&
             incoming().role == existing().role &&
             incoming().email == existing().email &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'name', 'phone', 'mobile', 'address', 'avatarUrl'])
+            incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'name', 'phone', 'mobile', 'address', 'avatarUrl', 'updatedAt'])
           )
         );
       allow delete: if isValidId(userId) && isAdmin();
@@ -458,9 +476,9 @@ service cloud.firestore {
       allow get: if isValidId(videoId);
       allow list: if true;
       allow create: if isValidId(videoId) && isAdmin() && isValidVideo(incoming());
-      allow update: if isValidId(videoId) && isValidVideo(incoming()) &&
+      allow update: if isValidId(videoId) &&
         (
-          isAdmin() ||
+          (isAdmin() && isValidVideo(incoming())) ||
           (
             incoming().diff(existing()).affectedKeys().hasOnly(['views']) &&
             incoming().views is number &&
@@ -538,11 +556,11 @@ service cloud.firestore {
       allow get: if isValidId(couponId);
       allow list: if true;
       allow create: if isValidId(couponId) && isAdmin() && isValidCoupon(incoming());
-      allow update: if isValidId(couponId) && isValidCoupon(incoming()) &&
+      allow update: if isValidId(couponId) &&
         (
-          isAdmin() ||
+          (isAdmin() && isValidCoupon(incoming())) ||
           (
-            existing().isActive == true &&
+            (existing().get('isActive', false) == true || existing().get('active', false) == true) &&
             incoming().diff(existing()).affectedKeys().hasOnly(['timesUsed', 'updatedAt']) &&
             incoming().timesUsed is number &&
             incoming().timesUsed == existing().get('timesUsed', 0) + 1 &&
@@ -664,7 +682,7 @@ service cloud.firestore {
 
     match /uploaded_images/{imageId} {
       allow get, list, update, delete: if isAdmin();
-      allow create: if isValidId(imageId) && isValidUploadedImage(incoming());
+      allow create: if isValidId(imageId) && isAdmin() && isValidUploadedImage(incoming());
     }
 
     match /notifications/{notificationId} {

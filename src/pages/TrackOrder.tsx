@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, OperationType, handleFirestoreError } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Order, Booking } from '../types';
 import { SEOHead } from '../components/SEOHead';
@@ -40,37 +40,28 @@ export const TrackOrder: React.FC = () => {
 
     try {
       const adminUser = isAdmin();
+      const isValidDocId = /^[a-zA-Z0-9_-]{4,128}$/.test(queryTerm);
 
-      // 1. Check if queryTerm matches a single direct document ID
-      if (queryTerm.startsWith('LM-') || queryTerm.startsWith('ORD-') || queryTerm.startsWith('BK-') || queryTerm.length >= 8) {
-        try {
+      // 1. Direct document lookup for admins when query looks like a valid Firestore document ID
+      if (adminUser && isValidDocId && (queryTerm.startsWith('LM-') || queryTerm.startsWith('ORD-') || queryTerm.startsWith('BK-') || queryTerm.length >= 8)) {
+        if (!queryTerm.startsWith('BK-')) {
           const orderDocRef = doc(db, 'orders', queryTerm);
           const orderSnap = await getDoc(orderDocRef);
           if (orderSnap.exists()) {
             const ord = { id: orderSnap.id, ...orderSnap.data() } as Order;
-            if (adminUser || ord.customerId === currentUser.uid) {
-              setOrderResults([ord]);
-              setLoading(false);
-              return;
-            }
+            setOrderResults([ord]);
+            setLoading(false);
+            return;
           }
-        } catch {
-          // Try booking next or scoped list
         }
 
-        try {
-          const bookingDocRef = doc(db, 'bookings', queryTerm);
-          const bookingSnap = await getDoc(bookingDocRef);
-          if (bookingSnap.exists()) {
-            const bk = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
-            if (adminUser || bk.customerId === currentUser.uid) {
-              setBookingResults([bk]);
-              setLoading(false);
-              return;
-            }
-          }
-        } catch {
-          // Continue to scoped list
+        const bookingDocRef = doc(db, 'bookings', queryTerm);
+        const bookingSnap = await getDoc(bookingDocRef);
+        if (bookingSnap.exists()) {
+          const bk = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
+          setBookingResults([bk]);
+          setLoading(false);
+          return;
         }
       }
 
@@ -130,8 +121,15 @@ export const TrackOrder: React.FC = () => {
         setOrderResults(matchingOrders);
         setBookingResults(matchingBookings);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error tracking query:', err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.GET, 'orders|bookings');
+        } catch {
+          // Structured error logged
+        }
+      }
     } finally {
       setLoading(false);
     }

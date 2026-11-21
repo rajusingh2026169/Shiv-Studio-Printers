@@ -1,4 +1,4 @@
-import { db } from '../firebase';
+import { db, OperationType, handleFirestoreError } from '../firebase';
 import { 
   collection, 
   doc, 
@@ -6,8 +6,7 @@ import {
   query, 
   where, 
   setDoc, 
-  deleteDoc, 
-  orderBy 
+  deleteDoc
 } from 'firebase/firestore';
 import { ProductItem, ProductImageItem } from '../types';
 import { uploadBase64ToStorage, ensureAllStorageUrls } from './imageUploader';
@@ -57,8 +56,15 @@ export async function saveProductImages(
     });
 
     await Promise.all(insertPromises);
-  } catch (err) {
+  } catch (err: any) {
     console.error(`Error saving product_images for ${productId}:`, err);
+    if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+      try {
+        handleFirestoreError(err, OperationType.WRITE, `product_images/${productId}`);
+      } catch {
+        // Structured error logged
+      }
+    }
   }
 
   return cleanUrls;
@@ -198,8 +204,10 @@ export async function autoMigrateExistingProducts(): Promise<void> {
           await setDoc(doc(db, 'products', prodId), cleanPayload);
           migratedCount++;
         } else {
-          // Mark clean doc as migrated so it is skipped on future runs
-          await setDoc(doc(db, 'products', prodId), { _migrated: true }, { merge: true });
+          // Normalize clean doc with _migrated flag so it satisfies strict product schema
+          const cleanPayload = await prepareCleanProductDoc(data as ProductItem, prodId);
+          cleanPayload._migrated = true;
+          await setDoc(doc(db, 'products', prodId), cleanPayload);
         }
       } catch (prodErr) {
         console.warn(`Notice during product auto-migration for doc ${docSnap.id}:`, prodErr);

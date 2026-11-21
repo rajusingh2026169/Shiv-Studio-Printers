@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { db, OperationType, handleFirestoreError } from '../../firebase';
 import { Booking } from '../../types';
-import { Camera, Calendar, MapPin, Phone, CheckCircle, Clock } from 'lucide-react';
+import { Camera, Calendar, MapPin, Phone, CheckCircle } from 'lucide-react';
 
 export const PhotographerPanel: React.FC = () => {
   const [shoots, setShoots] = useState<Booking[]>([]);
@@ -16,8 +16,15 @@ export const PhotographerPanel: React.FC = () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'bookings'));
       setShoots(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking)));
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching shoots:', err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'bookings');
+        } catch {
+          // Structured error logged
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -30,8 +37,15 @@ export const PhotographerPanel: React.FC = () => {
           status: 'Completed'
         });
         fetchShoots();
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
+        if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+          try {
+            handleFirestoreError(err, OperationType.UPDATE, `bookings/${bookingId}`);
+          } catch {
+            // Structured error logged
+          }
+        }
       }
     }
   };

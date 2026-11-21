@@ -24,6 +24,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { AdminDashboard } from './pages/dashboard/AdminDashboard';
 import { CustomerPortal } from './pages/dashboard/CustomerPortal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { CartItem, ProductItem, ProductVariant } from './types';
 
 // Role-based route guardian
@@ -43,14 +44,17 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   }
 
   if (allowedRoles) {
+    if (!userProfile) {
+      return <Navigate to="/login" replace />;
+    }
     const normalizedAllowed = allowedRoles.map((r) => r.toLowerCase());
-    const userRoleNormalized = (userProfile?.role || '').toLowerCase();
+    const userRoleNormalized = (userProfile.role || '').toLowerCase();
     const adminRouteRequested = normalizedAllowed.some((r) => r.includes('admin'));
 
     if (adminRouteRequested && isAdmin()) {
       return <>{children}</>;
     }
-    if (userProfile && !normalizedAllowed.includes(userRoleNormalized)) {
+    if (!normalizedAllowed.includes(userRoleNormalized)) {
       return <Navigate to="/" replace />;
     }
   }
@@ -294,10 +298,12 @@ const MainAppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <MainAppContent />
-      </AuthProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <AuthProvider>
+          <MainAppContent />
+        </AuthProvider>
+      </Router>
+    </ErrorBoundary>
   );
 }

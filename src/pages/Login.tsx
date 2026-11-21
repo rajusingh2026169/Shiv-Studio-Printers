@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth, isAdminRoleValue } from '../context/AuthContext';
+import { useAuth, isAdminRoleValue, AUTHORIZED_ADMIN_EMAILS } from '../context/AuthContext';
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { ShieldAlert, Key, Mail, ArrowRight } from 'lucide-react';
@@ -8,13 +8,53 @@ import { STUDIO_IMAGES } from '../assets/studioAssets';
 import { SEOHead } from '../components/SEOHead';
 
 export const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const routeAuthenticatedUser = async (user: NonNullable<typeof auth.currentUser>) => {
+    const userEmail = (user.email || '').toLowerCase();
+    let role = 'customer';
+    try {
+      const docSnap = await getDoc(doc(db, 'users', user.uid));
+      if (docSnap.exists()) {
+        role = docSnap.data().role || 'customer';
+      }
+    } catch {
+      // Fallback to verified bootstrap email check
+    }
+    const isVerifiedBootstrapAdmin =
+      AUTHORIZED_ADMIN_EMAILS.includes(userEmail) && user.emailVerified;
+
+    if (isAdminRoleValue(role) || isVerifiedBootstrapAdmin) {
+      navigate('/admin/dashboard');
+    } else {
+      navigate('/customer/dashboard');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (loading) return;
+    setError('');
+    setLoading(true);
+    try {
+      const user = await loginWithGoogle();
+      await routeAuthenticatedUser(user);
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/popup-closed-by-user') {
+        setError('Google sign-in popup was closed before completing.');
+      } else {
+        setError(err?.message?.replace(/^Firebase:\s*/, '') || 'Google sign-in failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,13 +66,7 @@ export const Login: React.FC = () => {
       await login(email, password);
       const user = auth.currentUser;
       if (user) {
-        const docSnap = await getDoc(doc(db, 'users', user.uid));
-        const role = docSnap.exists() ? docSnap.data().role : 'customer';
-        if (isAdminRoleValue(role)) {
-          navigate('/admin/dashboard');
-        } else {
-          navigate('/customer/dashboard');
-        }
+        await routeAuthenticatedUser(user);
       } else {
         navigate('/');
       }
@@ -43,7 +77,7 @@ export const Login: React.FC = () => {
         code === 'auth/user-not-found' ||
         code === 'auth/wrong-password'
       ) {
-        setError('Invalid email or password. Please verify your credentials or create a client account.');
+        setError('Invalid email or password. Please verify your credentials or sign in with Google.');
       } else if (code === 'auth/invalid-email') {
         setError('Please enter a valid email address.');
       } else if (code === 'auth/too-many-requests') {
@@ -86,6 +120,23 @@ export const Login: React.FC = () => {
             <span>{error}</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="w-full py-3.5 bg-white hover:bg-neutral-100 disabled:bg-white/20 text-[#111111] font-semibold rounded-xl text-xs tracking-wide transition-colors flex items-center justify-center gap-2.5"
+        >
+          <span>Continue with Google</span>
+        </button>
+
+        <div className="relative flex items-center">
+          <div className="flex-grow border-t border-white/10" />
+          <span className="px-3 text-[11px] uppercase tracking-wider text-neutral-500 font-mono">
+            Or with email
+          </span>
+          <div className="flex-grow border-t border-white/10" />
+        </div>
 
         <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
           <div className="space-y-1.5">

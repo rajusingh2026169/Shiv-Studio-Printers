@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
-import { db } from '../../firebase';
+import { db, OperationType, handleFirestoreError } from '../../firebase';
 import { Order, Booking } from '../../types';
 import { User, ShoppingBag, Calendar, Eye, Mail, Phone, MapPin, LogOut } from 'lucide-react';
 import { InvoiceModal } from '../../components/InvoiceModal';
@@ -37,8 +37,15 @@ export const CustomerPortal: React.FC = () => {
       const bookingsQ = query(bookingsRef, where('customerId', '==', currentUser?.uid));
       const bookingsSnap = await getDocs(bookingsQ);
       setBookings(bookingsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking)));
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching customer records:', err);
+      if (err?.code === 'permission-denied' || String(err?.message || '').includes('Missing or insufficient permissions')) {
+        try {
+          handleFirestoreError(err, OperationType.LIST, 'orders|bookings');
+        } catch {
+          // Structured error logged
+        }
+      }
     } finally {
       setLoading(false);
     }
