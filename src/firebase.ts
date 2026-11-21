@@ -65,8 +65,8 @@ export const db =
     : getFirestore(app);
 
 export const storage = getStorage(app);
-storage.maxUploadRetryTime = 3000;
-storage.maxOperationRetryTime = 3000;
+storage.maxUploadRetryTime = 30000;
+storage.maxOperationRetryTime = 30000;
 
 async function testConnection() {
   try {

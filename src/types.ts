@@ -216,6 +216,66 @@ export interface ProductItem {
   };
 }
 
+export const WEDDING_CARD_CATEGORIES = [
+  'Traditional Wedding Cards',
+  'Royal Wedding Cards',
+  'Premium Wedding Cards',
+  'Luxury Box Invitations',
+  'Designer Wedding Cards',
+  'Minimalist Wedding Cards',
+  'Engagement Invitation Cards',
+  'Birthday Invitation Cards',
+  'Anniversary Invitation Cards',
+  'Digital Wedding Invitations',
+  'Wedding Invitation Videos'
+] as const;
+
+export type WeddingCardCategory = (typeof WEDDING_CARD_CATEGORIES)[number];
+
+export type DigitalInvitationType =
+  | 'Static Wedding Invitation Images'
+  | 'WhatsApp Wedding Invitation'
+  | 'Animated Wedding Invitation'
+  | 'Wedding Invitation Videos';
+
+export type ProofStatus =
+  | 'Awaiting Proof'
+  | 'Proof Uploaded'
+  | 'Revision Requested'
+  | 'Approved';
+
+export interface ProofVersion {
+  version: number;
+  proofUrl: string;
+  fileType: 'image' | 'pdf' | 'video';
+  fileName?: string;
+  notes?: string;
+  uploadedAt: string;
+  status: 'Pending Review' | 'Revision Requested' | 'Approved';
+  customerFeedback?: string;
+  respondedAt?: string;
+}
+
+export interface WeddingCardCustomization {
+  groomName: string;
+  brideName: string;
+  groomFatherName?: string;
+  brideFatherName?: string;
+  groomMotherName?: string;
+  brideMotherName?: string;
+  weddingDate: string;
+  weddingTime?: string;
+  venueName: string;
+  venueAddress: string;
+  rsvpDetails?: string;
+  additionalFunctions?: string;
+  language: 'Hindi' | 'English' | 'Both';
+  specialInstructions?: string;
+  selectedColor?: string;
+  selectedFinish?: string;
+  referenceFiles?: UploadedFileRecord[];
+}
+
 export interface WeddingCardItem {
   id: string;
   title?: string;
@@ -225,15 +285,35 @@ export interface WeddingCardItem {
   discountPrice?: number;
   image?: string;
   mainImage?: string;
-  images?: any;
+  images?: {
+    front?: string;
+    inside?: string;
+    back?: string;
+    [key: string]: any;
+  };
+  sampleImages?: string[];
+  videoUrl?: string;
   cardImages?: any;
   description: string;
   designCode?: string;
   minOrderQuantity?: number;
   paperType?: string;
+  paperQuality?: string;
   printingType?: string;
   size?: string;
   color?: string;
+  availableColors?: string[];
+  availableFinishes?: string[];
+  customizationAvailable?: boolean;
+  estimatedProductionTime?: string;
+  printingCharge?: number;
+  customizationCharge?: number;
+  shippingCharge?: number;
+  quantityOptions?: number[];
+  isDigital?: boolean;
+  digitalType?: DigitalInvitationType | string;
+  enableGst?: boolean;
+  gstPercent?: number;
   isAvailable?: boolean;
   isFeatured?: boolean;
   whatsappNumber?: string;
@@ -249,6 +329,19 @@ export interface CartItem {
   selectedVariantName?: string;
   selectedVariantPrice?: number;
   quantity: number;
+  itemType?: 'product' | 'wedding_card';
+  weddingCardId?: string;
+  designCode?: string;
+  selectedColor?: string;
+  selectedFinish?: string;
+  printingCharge?: number;
+  customizationCharge?: number;
+  cardShippingCharge?: number;
+  minOrderQuantity?: number;
+  isDigital?: boolean;
+  digitalType?: string;
+  estimatedProductionTime?: string;
+  weddingCardCustomization?: WeddingCardCustomization;
 }
 
 export type BookingStatus =
@@ -406,6 +499,15 @@ export interface Order {
     price: number;
     quantity: number;
     image: string;
+    itemType?: 'product' | 'wedding_card';
+    designCode?: string;
+    selectedColor?: string;
+    selectedFinish?: string;
+    printingCharge?: number;
+    customizationCharge?: number;
+    isDigital?: boolean;
+    digitalType?: string;
+    weddingCardCustomization?: WeddingCardCustomization;
   }[];
   uploadedFileUrl?: string;
   uploadedFileName?: string;
@@ -428,6 +530,7 @@ export interface Order {
   status: 'Pending' | 'Accepted' | 'Designing' | 'Printing' | 'Ready' | 'Shipped' | 'Delivered' | 'Cancelled';
   paymentId?: string;
   createdAt: string;
+  updatedAt?: string;
   gstEnabled?: boolean;
   gstPercentage?: number;
   gstAmount?: number;
@@ -436,6 +539,18 @@ export interface Order {
   paymentDate?: string;
   advancePaid?: number;
   dueAmount?: number;
+  orderType?: 'store' | 'wedding_card' | 'mixed';
+  hasWeddingCards?: boolean;
+  printingCharge?: number;
+  customizationCharge?: number;
+  weddingCardCustomization?: WeddingCardCustomization;
+  proofStatus?: ProofStatus;
+  proofVersions?: ProofVersion[];
+  approvedProofUrl?: string;
+  approvedAt?: string;
+  revisionNotes?: string;
+  digitalDeliverableUrl?: string;
+  digitalDeliverableName?: string;
 }
 
 export interface Expense {

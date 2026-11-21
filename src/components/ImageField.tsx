@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { storage, db, auth } from '../firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { Upload, Link2, CheckCircle2, AlertCircle, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
-import { uploadBase64ToStorage } from '../utils/imageUploader';
+import { isEphemeralMediaUrl, resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 
 interface ImageFieldProps {
   value: string;
@@ -175,10 +175,30 @@ export const ImageField: React.FC<ImageFieldProps> = ({
     }
   };
 
+  const mapStorageUploadError = (err: any): string => {
+    const code = err?.code || '';
+    const msg = err?.message || String(err || '');
+    if (code === 'storage/unauthorized' || msg.includes('unauthorized')) {
+      return 'Firebase Storage permission denied. Please ensure you are signed in with Admin/Staff access and Storage rules are published.';
+    }
+    if (code === 'storage/retry-limit-exceeded') {
+      return 'Upload timed out due to network or Firebase Storage CORS settings. Click Retry Upload or paste an https:// image URL.';
+    }
+    if (code === 'storage/canceled') {
+      return 'Upload was canceled.';
+    }
+    return `Cloud upload failed: ${msg}`;
+  };
+
   const handleFile = async (file: File) => {
     setError(null);
     setSuccess(false);
     setSelectedFileForRetry(file);
+
+    if (!auth.currentUser) {
+      setError('Please sign in first before uploading images to permanent Firebase Storage.');
+      return;
+    }
 
     // Limit check (15 MB max)
     if (file.size > 15 * 1024 * 1024) {
@@ -188,124 +208,93 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       return;
     }
 
-    console.log('Upload Started');
-    let progressTimer: any = null;
-
     try {
       setIsCompressing(true);
       setError(null);
 
-      // 1. Fast Native Canvas Compression to WebP (<100ms)
+      // 1. Compress & resize image cleanly to WebP
       const compressedFile = await compressAndResizeImage(file, storagePath);
 
-      console.log('📦 Image Compression Successful:', {
-        compressedFileName: compressedFile.name,
-        compressedSizeKB: (compressedFile.size / 1024).toFixed(1),
-        type: compressedFile.type
-      });
-
       setIsCompressing(false);
-      setUploadProgress(15);
+      setUploadProgress(5);
 
       const filePath = getPath(compressedFile.name);
       const storageRef = ref(storage, filePath);
 
       const metadata = {
-        contentType: 'image/webp',
+        contentType: compressedFile.type || 'image/webp',
         cacheControl: 'public,max-age=31536000',
+        customMetadata: {
+          uploadedBy: auth.currentUser.uid,
+          category: storagePath
+        }
       };
 
-      let downloadUrl = '';
+      const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
 
-      // Try fast server /api/upload endpoint first
+      uploadTask.on('state_changed', (snapshot) => {
+        const progress = snapshot.totalBytes > 0
+          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+          : 5;
+        setUploadProgress(progress);
+      });
+
+      const timeoutPromise = new Promise<never>((_, rej) =>
+        setTimeout(() => {
+          try {
+            uploadTask.cancel();
+          } catch {
+            // ignore
+          }
+          rej(new Error('Firebase Storage upload timed out after 45 seconds.'));
+        }, 45000)
+      );
+
+      const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+
+      if (!downloadUrl || !downloadUrl.startsWith('https://')) {
+        throw new Error('Firebase Storage did not return a permanent HTTPS URL.');
+      }
+
+      if (downloadUrl.length > 2048) {
+        throw new Error('Generated download URL exceeds Firestore 2048-character limit.');
+      }
+
+      setUploadProgress(100);
+
+      // Log metadata record in Firestore
       try {
-        const formData = new FormData();
-        formData.append('file', compressedFile, compressedFile.name);
-        const resp = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
+        const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        await setDoc(doc(db, 'uploaded_images', imageId), {
+          url: downloadUrl,
+          path: filePath,
+          category: storagePath,
+          uploadedAt: new Date().toISOString(),
+          originalName: file.name,
+          compressed: true
         });
-        if (resp.ok) {
-          const apiData = await resp.json();
-          if (apiData && apiData.url) {
-            downloadUrl = apiData.url;
-          }
-        }
-      } catch (err) {
-        console.warn('Local /api/upload fallback in ImageField:', err);
+      } catch (dbErr) {
+        console.warn('Could not record uploaded_images doc:', dbErr);
       }
 
-      if (!downloadUrl) {
-        try {
-          const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
+      // Sync doc if explicitly bound
+      if (firestoreDoc && firestoreField) {
+        const docRef = doc(db, firestoreDoc);
+        await setDoc(docRef, { [firestoreField]: downloadUrl }, { merge: true });
 
-          // 1. 'state_changed' observer tracks progress
-          uploadTask.on('state_changed', (snapshot) => {
-            const progress = snapshot.totalBytes > 0 
-              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
-              : 0;
-            setUploadProgress(progress);
-          });
-
-          // 2. Task completion with 2s timeout
-          const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Storage timeout')), 2000));
-          const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-          downloadUrl = await getDownloadURL(snapshot.ref);
-        } catch (uploadErr) {
-          console.warn('Storage upload fallback to optimized WebP data URL:', uploadErr);
-          const reader = new FileReader();
-          downloadUrl = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(compressedFile);
-          });
+        if (firestoreDoc === 'website_settings/studio') {
+          await setDoc(doc(db, 'settings', 'studio'), { [firestoreField]: downloadUrl }, { merge: true });
         }
       }
 
-      if (downloadUrl) {
-        setUploadProgress(100);
-        console.log('Upload Finished');
-        console.log('Download URL Generated', downloadUrl);
-
-        // Log metadata record in Firestore
-        try {
-          const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          await setDoc(doc(db, 'uploaded_images', imageId), {
-            url: downloadUrl,
-            path: filePath,
-            category: storagePath,
-            uploadedAt: new Date().toISOString(),
-            originalName: file.name,
-            compressed: true
-          });
-        } catch (dbErr) {
-          console.warn('Could not record uploaded_images doc:', dbErr);
-        }
-
-        // Sync doc if required
-        if (firestoreDoc && firestoreField) {
-          const docRef = doc(db, firestoreDoc);
-          await setDoc(docRef, { [firestoreField]: downloadUrl }, { merge: true });
-          
-          if (firestoreDoc === 'website_settings/studio') {
-            await setDoc(doc(db, 'settings', 'studio'), { [firestoreField]: downloadUrl }, { merge: true });
-          }
-        }
-        console.log('Firestore Saved');
-
-        onChange(downloadUrl);
-        setSuccess(true);
-        setError(null);
-        console.log('Operation Complete');
-      } else {
-        setError('Upload failed. Please check network connection or try again.');
-      }
+      onChange(downloadUrl);
+      setSuccess(true);
+      setError(null);
     } catch (err: any) {
-      if (progressTimer) clearInterval(progressTimer);
-      console.error('❌ Compression / Upload Failure:', err);
-      setError(`Image upload failed: ${err.message || err}`);
+      console.error('❌ Image upload failure:', err);
+      setError(mapStorageUploadError(err));
     } finally {
-      if (progressTimer) clearInterval(progressTimer);
       setTimeout(() => {
         setUploadProgress(null);
         setIsCompressing(false);
@@ -355,7 +344,21 @@ export const ImageField: React.FC<ImageFieldProps> = ({
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onChange(urlInput);
+    const trimmed = urlInput.trim();
+    if (!trimmed) {
+      setError('Please enter a valid HTTPS image URL.');
+      return;
+    }
+    if (trimmed.startsWith('blob:') || trimmed.startsWith('file:')) {
+      setError('Temporary blob/file URLs cannot be saved. Upload the image file or paste an https:// URL.');
+      return;
+    }
+    if (trimmed.startsWith('data:') || trimmed.length > 2048) {
+      setError('Base64 data URLs or URLs over 2048 characters are not allowed in Firestore. Please upload the image file instead.');
+      return;
+    }
+    setError(null);
+    onChange(trimmed);
     setSuccess(true);
   };
 
@@ -418,11 +421,12 @@ export const ImageField: React.FC<ImageFieldProps> = ({
           {value ? (
             <div className="relative group border border-slate-800 rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center">
               <img
-                src={value}
+                src={resolveMediaUrl(value)}
                 alt="Preview"
                 loading="lazy"
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
+                onError={(e) => applyImageFallback(e)}
               />
               <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                 <button
@@ -521,11 +525,12 @@ export const ImageField: React.FC<ImageFieldProps> = ({
           {value && (
             <div className="relative group border border-slate-800 rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center">
               <img
-                src={value}
+                src={resolveMediaUrl(value)}
                 alt="Preview"
                 loading="lazy"
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
+                onError={(e) => applyImageFallback(e)}
               />
               <button
                 type="button"
@@ -537,6 +542,15 @@ export const ImageField: React.FC<ImageFieldProps> = ({
             </div>
           )}
         </form>
+      )}
+
+      {value && isEphemeralMediaUrl(value) && (
+        <div className="flex items-start gap-2 text-amber-300 bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl text-xxs">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+          <span>
+            This record uses a temporary/local image path that will not load reliably on live production. Please upload a new image file to store it permanently in Firebase Storage.
+          </span>
+        </div>
       )}
 
       {/* Error Message & Retry Upload Option */}

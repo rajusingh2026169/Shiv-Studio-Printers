@@ -8,6 +8,7 @@ import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { validateAndFilterVideoDocs } from '../utils/videoUtils';
 import { STUDIO_IMAGES, getImageForSlugOrCategory } from '../assets/studioAssets';
+import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 import { SERVICE_DEFINITIONS, WHY_CHOOSE_US_ITEMS } from '../data/studioCatalog';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
@@ -290,10 +291,11 @@ export const Landing: React.FC = () => {
       {/* SECTION 2: HERO BANNER */}
       <section className="relative min-h-[82vh] flex items-center bg-[#111111] border-b border-white/10">
         <img
-          src={settings.heroImageUrl || STUDIO_IMAGES.heroWedding}
+          src={resolveMediaUrl(settings.heroImageUrl, STUDIO_IMAGES.heroWedding)}
           alt="SHIV STUDIO Luxury Indian Wedding Photography"
           className="absolute inset-0 w-full h-full object-cover object-center opacity-50"
           referrerPolicy="no-referrer"
+          onError={(e) => applyImageFallback(e, STUDIO_IMAGES.heroWedding)}
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#111111] via-[#111111]/75 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-transparent to-[#111111]/40" />
@@ -337,11 +339,12 @@ export const Landing: React.FC = () => {
           <div className="lg:col-span-6">
             <div className="rounded-2xl overflow-hidden border border-white/10 bg-[#1A1A1A] aspect-[4/3]">
               <img
-                src={settings.aboutImageUrl || STUDIO_IMAGES.studioPortrait}
+                src={resolveMediaUrl(settings.aboutImageUrl, STUDIO_IMAGES.studioPortrait)}
                 alt="SHIV STUDIO creative workspace in Khaga, Fatehpur"
                 className="w-full h-full object-cover"
                 loading="lazy"
                 referrerPolicy="no-referrer"
+                onError={(e) => applyImageFallback(e, STUDIO_IMAGES.studioPortrait)}
               />
             </div>
           </div>
@@ -411,11 +414,12 @@ export const Landing: React.FC = () => {
                   <div>
                     <div className="aspect-[4/3] overflow-hidden bg-[#1A1A1A]">
                       <img
-                        src={srv.image || srv.coverImage || getImageForSlugOrCategory(srv.title)}
+                        src={resolveMediaUrl(srv.image || srv.coverImage, getImageForSlugOrCategory(srv.title))}
                         alt={srv.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         loading="lazy"
                         referrerPolicy="no-referrer"
+                        onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(srv.title))}
                       />
                     </div>
                     <div className="p-6 space-y-2">
@@ -503,11 +507,12 @@ export const Landing: React.FC = () => {
                 className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-[#1A1A1A] border border-white/10 cursor-pointer"
               >
                 <img
-                  src={item.imageUrl}
+                  src={resolveMediaUrl(item.imageUrl, getImageForSlugOrCategory(item.category))}
                   alt={item.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   loading="lazy"
                   referrerPolicy="no-referrer"
+                  onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(item.category))}
                 />
                 {item.type === 'video' && (
                   <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
@@ -571,11 +576,12 @@ export const Landing: React.FC = () => {
                   <div>
                     <div className="aspect-[4/3] bg-[#1A1A1A]">
                       <img
-                        src={pkg.image || getImageForSlugOrCategory(pkg.category)}
+                        src={resolveMediaUrl(pkg.image, getImageForSlugOrCategory(pkg.category))}
                         alt={pkg.name}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         referrerPolicy="no-referrer"
+                        onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(pkg.category))}
                       />
                     </div>
                     <div className="p-6 space-y-3">
@@ -653,11 +659,12 @@ export const Landing: React.FC = () => {
                     <div>
                       <div className="aspect-square rounded-lg overflow-hidden bg-[#111111]">
                         <img
-                          src={product.image || STUDIO_IMAGES.luxuryAlbumFrame}
+                          src={resolveMediaUrl(product.image || product.thumbnailUrl, STUDIO_IMAGES.luxuryAlbumFrame)}
                           alt={product.title}
                           className="w-full h-full object-cover"
                           loading="lazy"
                           referrerPolicy="no-referrer"
+                          onError={(e) => applyImageFallback(e, STUDIO_IMAGES.luxuryAlbumFrame)}
                         />
                       </div>
                       <p className="text-[11px] uppercase tracking-wider text-neutral-400 mt-3">
@@ -851,11 +858,12 @@ export const Landing: React.FC = () => {
                 className="group relative aspect-square rounded-xl overflow-hidden bg-[#111111] border border-white/10"
               >
                 <img
-                  src={post.imageUrl}
+                  src={resolveMediaUrl(post.imageUrl, STUDIO_IMAGES.heroWedding)}
                   alt={post.caption || 'SHIV STUDIO Instagram Moment'}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   loading="lazy"
                   referrerPolicy="no-referrer"
+                  onError={(e) => applyImageFallback(e, STUDIO_IMAGES.heroWedding)}
                 />
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-3 text-center">
                   <span className="text-[11px] font-medium text-white line-clamp-2">{post.caption}</span>
@@ -1041,10 +1049,11 @@ export const Landing: React.FC = () => {
           onClick={() => setLightboxImage(null)}
         >
           <img
-            src={lightboxImage}
+            src={resolveMediaUrl(lightboxImage)}
             alt="SHIV STUDIO enlarged work"
             className="max-w-full max-h-[90vh] object-contain rounded-xl border border-white/15"
             referrerPolicy="no-referrer"
+            onError={(e) => applyImageFallback(e)}
           />
         </div>
       )}

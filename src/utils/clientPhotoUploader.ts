@@ -281,91 +281,91 @@ export const uploadOriginalClientPhoto = async (
   };
 
   // Immediate start signal
-  emitProgress(10, Math.round(originalFileSize * 0.1), 'Uploading...');
+  emitProgress(10, Math.round(originalFileSize * 0.1), 'Uploading to cloud...');
 
   let downloadUrl = '';
 
-  // 1. Try high-speed server-side /api/upload endpoint with real live XMLHttpRequest progress
+  // 1. Upload directly to Firebase Storage first (works identically on localhost & Vercel production)
   try {
-    const uploadResult = await new Promise<{ url: string } | null>((resolve) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      formData.append('file', file, originalFileName);
+    const storageRef = ref(storage, storagePath);
+    const safeFileName = originalFileName.replace(/[^\x00-\x7F]/g, '_');
+    const safeUploaderName = uploaderName.replace(/[^\x00-\x7F]/g, '_');
 
-      xhr.upload.onprogress = (evt) => {
-        if (evt.lengthComputable && evt.total > 0) {
-          const pct = Math.min(99, Math.max(10, Math.round((evt.loaded / evt.total) * 100)));
-          emitProgress(pct, evt.loaded);
-        }
-      };
+    const metadata = {
+      contentType,
+      cacheControl: 'public,max-age=31536000',
+      customMetadata: {
+        originalFileName: safeFileName,
+        originalFileSize: String(originalFileSize),
+        uploadedBy: safeUploaderName,
+      }
+    };
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data);
-          } catch {
-            resolve(null);
-          }
-        } else {
-          resolve(null);
-        }
-      };
+    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
 
-      xhr.onerror = () => resolve(null);
-      xhr.ontimeout = () => resolve(null);
-      xhr.timeout = 60000; // 60s max for huge files
-
-      xhr.open('POST', '/api/upload');
-      xhr.send(formData);
+    uploadTask.on('state_changed', (snap) => {
+      if (snap.totalBytes > 0) {
+        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        emitProgress(pct, snap.bytesTransferred);
+      }
     });
 
-    if (uploadResult && uploadResult.url) {
-      downloadUrl = uploadResult.url;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => {
+        try {
+          uploadTask.cancel();
+        } catch {
+          // ignore
+        }
+        reject(new Error('Firebase Storage upload timed out after 45 seconds'));
+      }, 45000)
+    );
+
+    const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+    downloadUrl = await getDownloadURL(snapshot.ref);
+  } catch (storageErr: any) {
+    console.warn('[CUSTOMER PHOTO UPLOAD] Firebase Storage notice:', storageErr?.message || storageErr);
+    // Optional local Express fallback ONLY when running on localhost
+    const isLocalHost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    if (isLocalHost) {
+      try {
+        const uploadResult = await new Promise<{ url: string } | null>((resolve) => {
+          const xhr = new XMLHttpRequest();
+          const formData = new FormData();
+          formData.append('file', file, originalFileName);
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch {
+                resolve(null);
+              }
+            } else {
+              resolve(null);
+            }
+          };
+          xhr.onerror = () => resolve(null);
+          xhr.ontimeout = () => resolve(null);
+          xhr.timeout = 45000;
+          xhr.open('POST', '/api/upload');
+          xhr.send(formData);
+        });
+        if (uploadResult && uploadResult.url) {
+          downloadUrl = uploadResult.url;
+        }
+      } catch {
+        // handled below
+      }
     }
-  } catch (apiErr) {
-    console.warn('[CUSTOMER PHOTO UPLOAD] Local /api/upload notice:', apiErr);
-  }
 
-  // 2. If /api/upload did not complete, attempt Firebase Storage with a strict 3-second timeout
-  if (!downloadUrl) {
-    try {
-      const storageRef = ref(storage, storagePath);
-      const safeFileName = originalFileName.replace(/[^\x00-\x7F]/g, '_');
-      const safeUploaderName = uploaderName.replace(/[^\x00-\x7F]/g, '_');
-
-      const metadata = {
-        contentType,
-        customMetadata: {
-          originalFileName: safeFileName,
-          originalFileSize: String(originalFileSize),
-          uploadedBy: safeUploaderName,
-        }
-      };
-
-      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
-
-      uploadTask.on('state_changed', (snap) => {
-        if (snap.totalBytes > 0) {
-          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-          emitProgress(pct, snap.bytesTransferred);
-        }
-      });
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('storage_fast_timeout')), 3000)
+    if (!downloadUrl) {
+      throw new Error(
+        `Cloud file upload failed (${storageErr?.code || storageErr?.message || 'network error'}). Please check your connection and try again.`
       );
-
-      const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-      downloadUrl = await getDownloadURL(snapshot.ref);
-    } catch (err: any) {
-      console.warn('[CUSTOMER PHOTO UPLOAD] Cloud storage fallback triggered:', err?.message || err);
-      downloadUrl = localBlobUrl;
     }
-  }
-
-  if (!downloadUrl) {
-    downloadUrl = localBlobUrl;
   }
 
   // Register the downloadUrl to our local cache too
@@ -388,13 +388,12 @@ export const uploadOriginalClientPhoto = async (
     originalHeight: dimensions.height,
     uploadedAt: new Date().toISOString(),
     uploadedBy: uploaderName,
-    thumbnailUrl: compactPreview || downloadUrl,
+    thumbnailUrl: compactPreview && compactPreview.length <= 2048 ? compactPreview : downloadUrl,
     previewUrl: compactPreview || downloadUrl,
     name: originalFileName,
     url: downloadUrl,
   };
 
-  console.log('[CUSTOMER PHOTO UPLOAD] Successfully Processed:', record.originalFileName, 'URL:', downloadUrl);
   return record;
 };
 

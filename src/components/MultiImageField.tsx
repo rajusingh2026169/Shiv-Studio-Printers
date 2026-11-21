@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { storage, db } from '../firebase';
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage, db, auth } from '../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { Upload, X, ArrowLeft, ArrowRight, Image as ImageIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
-import { uploadBase64ToStorage } from '../utils/imageUploader';
+import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 
 interface MultiImageFieldProps {
   value: string[];
@@ -177,16 +177,17 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       return;
     }
 
+    if (!auth.currentUser) {
+      setError('Please sign in first before uploading images to permanent Firebase Storage.');
+      return;
+    }
+
     try {
       setIsCompressing(true);
       setUploadingCount(filesArray.length);
       const compressedFiles: { originalName: string; file: File }[] = [];
 
       for (const f of filesArray) {
-        // 1. Automatically compress every image before upload
-        // 2. Resize images based on requirements
-        // 3. Convert images to WebP format with 80% quality
-        // 14. Never upload original if compression succeeds
         const compressed = await compressAndResizeImage(f, storagePath);
         compressedFiles.push({ originalName: f.name, file: compressed });
       }
@@ -194,95 +195,75 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
 
       const uploadedUrls: string[] = [];
       const progresses: { [key: string]: number } = {};
-      
-      // Initialize progress
+
       compressedFiles.forEach(cf => {
         progresses[cf.file.name] = 0;
       });
       setUploadProgresses({ ...progresses });
 
-      // Upload files in parallel with clean uploadBytesResumable pattern
+      // Upload files directly to Firebase Storage in parallel
       await Promise.all(
         compressedFiles.map(async (cf) => {
           const filePath = getPath(cf.file.name);
           const storageRef = ref(storage, filePath);
 
           const metadata = {
-            contentType: 'image/webp',
+            contentType: cf.file.type || 'image/webp',
             cacheControl: 'public,max-age=31536000',
+            customMetadata: {
+              uploadedBy: auth.currentUser?.uid || 'admin',
+              category: storagePath
+            }
           };
 
-          let fileUrl = '';
+          const uploadTask = uploadBytesResumable(storageRef, cf.file, metadata);
 
-          // Try fast server /api/upload endpoint first
-          try {
-            const formData = new FormData();
-            formData.append('file', cf.file, cf.file.name);
-            const resp = await fetch('/api/upload', {
-              method: 'POST',
-              body: formData
-            });
-            if (resp.ok) {
-              const apiData = await resp.json();
-              if (apiData && apiData.url) {
-                fileUrl = apiData.url;
+          uploadTask.on('state_changed', (snapshot) => {
+            const progress = snapshot.totalBytes > 0
+              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+              : 0;
+            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: progress }));
+          });
+
+          const timeoutPromise = new Promise<never>((_, rej) =>
+            setTimeout(() => {
+              try {
+                uploadTask.cancel();
+              } catch {
+                // ignore
               }
-            }
-          } catch (err) {
-            console.warn('Local /api/upload fallback in MultiImageField:', err);
+              rej(new Error(`Upload timeout for ${cf.originalName}`));
+            }, 45000)
+          );
+
+          const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+          const fileUrl = await getDownloadURL(snapshot.ref);
+
+          if (!fileUrl || !fileUrl.startsWith('https://') || fileUrl.length > 2048) {
+            throw new Error(`Invalid cloud URL returned for ${cf.originalName}`);
           }
 
-          if (!fileUrl) {
-            try {
-              const uploadTask = uploadBytesResumable(storageRef, cf.file, metadata);
+          uploadedUrls.push(fileUrl);
+          setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 100 }));
 
-              // 1. 'state_changed' observer strictly tracks progress
-              uploadTask.on('state_changed', (snapshot) => {
-                const progress = snapshot.totalBytes > 0 
-                  ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
-                  : 0;
-                setUploadProgresses(prev => ({ ...prev, [cf.file.name]: progress }));
-              });
-
-              // 2. Task completion with timeout
-              const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Storage timeout')), 2000));
-              const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-              fileUrl = await getDownloadURL(snapshot.ref);
-            } catch (uploadErr) {
-              console.warn('Storage upload fallback to optimized WebP data URL in MultiImageField:', uploadErr);
-              const reader = new FileReader();
-              fileUrl = await new Promise<string>((resolve, reject) => {
-                reader.onload = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(cf.file);
-              });
-            }
-          }
-
-          if (fileUrl) {
-            uploadedUrls.push(fileUrl);
-            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 100 }));
-
-            try {
-              const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-              await setDoc(doc(db, 'uploaded_images', imageId), {
-                url: fileUrl,
-                path: filePath,
-                category: storagePath,
-                uploadedAt: new Date().toISOString(),
-                originalName: cf.originalName,
-                compressed: true
-              });
-            } catch (dbErr) {
-              console.warn('Could not record uploaded_images doc:', dbErr);
-            }
+          try {
+            const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            await setDoc(doc(db, 'uploaded_images', imageId), {
+              url: fileUrl,
+              path: filePath,
+              category: storagePath,
+              uploadedAt: new Date().toISOString(),
+              originalName: cf.originalName,
+              compressed: true
+            });
+          } catch (dbErr) {
+            console.warn('Could not record uploaded_images doc:', dbErr);
           }
         })
       );
 
       const finalUrls = [...value, ...uploadedUrls];
-      
-      // If specific doc and field are provided, update Firestore doc immediately
+
       if (firestoreDoc && firestoreField) {
         const docRef = doc(db, firestoreDoc);
         await setDoc(docRef, { [firestoreField]: finalUrls }, { merge: true });
@@ -485,11 +466,12 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
           {value.map((url, index) => (
             <div key={`${url}-${index}`} className="relative group border border-slate-800 rounded-xl overflow-hidden bg-slate-950 aspect-square flex flex-col justify-between">
               <img
-                src={url}
+                src={resolveMediaUrl(url)}
                 alt={`Uploaded product ${index + 1}`}
                 loading="lazy"
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
+                onError={(e) => applyImageFallback(e)}
               />
               
               {/* Overlay with reordering controls and delete */}

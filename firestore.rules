@@ -194,12 +194,36 @@ service cloud.firestore {
 
     function isValidWeddingCard(data) {
       return data.keys().hasAll(['id', 'designCode', 'name', 'category', 'price']) &&
-        data.keys().hasOnly(['id', 'title', 'name', 'designCode', 'category', 'price', 'discountPrice', 'minOrderQuantity', 'paperType', 'printingType', 'size', 'color', 'description', 'isAvailable', 'isFeatured', 'whatsappNumber', 'image', 'mainImage', 'images', 'cardImages', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'title', 'name', 'designCode', 'category', 'price', 'discountPrice', 'minOrderQuantity',
+          'paperType', 'paperQuality', 'printingType', 'size', 'color', 'availableColors', 'availableFinishes',
+          'customizationAvailable', 'estimatedProductionTime', 'printingCharge', 'customizationCharge',
+          'shippingCharge', 'quantityOptions', 'isDigital', 'digitalType', 'enableGst', 'gstPercent',
+          'description', 'isAvailable', 'isFeatured', 'whatsappNumber', 'image', 'mainImage', 'images',
+          'sampleImages', 'videoUrl', 'cardImages', 'createdAt', 'updatedAt'
+        ]) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
         data.designCode is string && data.designCode.size() > 0 && data.designCode.size() <= 80 &&
         data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
         data.category is string && data.category.size() <= 100 &&
         data.price is number && data.price >= 0 &&
+        (!('discountPrice' in data) || (data.discountPrice is number && data.discountPrice >= 0)) &&
+        (!('minOrderQuantity' in data) || (data.minOrderQuantity is number && data.minOrderQuantity >= 1)) &&
+        (!('printingCharge' in data) || (data.printingCharge is number && data.printingCharge >= 0)) &&
+        (!('customizationCharge' in data) || (data.customizationCharge is number && data.customizationCharge >= 0)) &&
+        (!('shippingCharge' in data) || (data.shippingCharge is number && data.shippingCharge >= 0)) &&
+        (!('gstPercent' in data) || (data.gstPercent is number && data.gstPercent >= 0)) &&
+        (!('enableGst' in data) || data.enableGst is bool) &&
+        (!('isDigital' in data) || data.isDigital is bool) &&
+        (!('customizationAvailable' in data) || data.customizationAvailable is bool) &&
+        (!('digitalType' in data) || (data.digitalType is string && data.digitalType.size() <= 100)) &&
+        (!('estimatedProductionTime' in data) || (data.estimatedProductionTime is string && data.estimatedProductionTime.size() <= 120)) &&
+        (!('paperQuality' in data) || (data.paperQuality is string && data.paperQuality.size() <= 160)) &&
+        (!('availableColors' in data) || (data.availableColors is list && data.availableColors.size() <= 20 && (data.availableColors.size() == 0 || data.availableColors[0] is string))) &&
+        (!('availableFinishes' in data) || (data.availableFinishes is list && data.availableFinishes.size() <= 20 && (data.availableFinishes.size() == 0 || data.availableFinishes[0] is string))) &&
+        (!('sampleImages' in data) || (data.sampleImages is list && data.sampleImages.size() <= 20 && (data.sampleImages.size() == 0 || data.sampleImages[0] is string))) &&
+        (!('quantityOptions' in data) || (data.quantityOptions is list && data.quantityOptions.size() <= 20 && (data.quantityOptions.size() == 0 || data.quantityOptions[0] is number))) &&
+        (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 2048)) &&
         (!('description' in data) || (data.description is string && data.description.size() <= 5000));
     }
 
@@ -236,7 +260,10 @@ service cloud.firestore {
           'subtotal', 'gst', 'shipping', 'discount', 'couponCode', 'couponName', 'discountAmount',
           'discountType', 'discountValue', 'originalPrice', 'finalPrice', 'paymentAmount', 'total',
           'gstEnabled', 'gstPercentage', 'gstAmount', 'paymentMethod', 'paymentStatus', 'paymentDate',
-          'advancePaid', 'dueAmount', 'status', 'paymentId', 'createdAt', 'updatedAt'
+          'advancePaid', 'dueAmount', 'status', 'paymentId', 'createdAt', 'updatedAt',
+          'orderType', 'hasWeddingCards', 'printingCharge', 'customizationCharge',
+          'weddingCardCustomization', 'proofStatus', 'proofVersions', 'approvedProofUrl',
+          'approvedAt', 'revisionNotes', 'digitalDeliverableUrl', 'digitalDeliverableName'
         ]) &&
         data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
         data.customerId is string && data.customerId.size() > 0 && data.customerId.size() <= 128 &&
@@ -249,6 +276,18 @@ service cloud.firestore {
         (!('customerRemark' in data) || (data.customerRemark is string && data.customerRemark.size() <= 2000)) &&
         data.subtotal is number && data.subtotal >= 0 &&
         data.total is number && data.total >= 0 &&
+        (!('printingCharge' in data) || (data.printingCharge is number && data.printingCharge >= 0)) &&
+        (!('customizationCharge' in data) || (data.customizationCharge is number && data.customizationCharge >= 0)) &&
+        (!('orderType' in data) || data.orderType in ['store', 'wedding_card', 'mixed']) &&
+        (!('hasWeddingCards' in data) || data.hasWeddingCards is bool) &&
+        (!('weddingCardCustomization' in data) || data.weddingCardCustomization is map) &&
+        (!('proofStatus' in data) || data.proofStatus in ['Awaiting Proof', 'Proof Uploaded', 'Revision Requested', 'Approved']) &&
+        (!('proofVersions' in data) || (data.proofVersions is list && data.proofVersions.size() <= 30 && (data.proofVersions.size() == 0 || data.proofVersions[0] is map))) &&
+        (!('approvedProofUrl' in data) || (data.approvedProofUrl is string && data.approvedProofUrl.size() <= 2048)) &&
+        (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 64)) &&
+        (!('revisionNotes' in data) || (data.revisionNotes is string && data.revisionNotes.size() <= 2000)) &&
+        (!('digitalDeliverableUrl' in data) || (data.digitalDeliverableUrl is string && data.digitalDeliverableUrl.size() <= 2048)) &&
+        (!('digitalDeliverableName' in data) || (data.digitalDeliverableName is string && data.digitalDeliverableName.size() <= 200)) &&
         data.status in ['Pending', 'Accepted', 'Designing', 'Printing', 'Ready', 'Shipped', 'Delivered', 'Cancelled'] &&
         data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64 &&
         (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
@@ -623,7 +662,7 @@ service cloud.firestore {
       allow delete: if isValidId(bookingId) && isAdmin();
     }
 
-    // Store & Print Orders (Scoped by owner UID or Admin/Staff)
+    // Store & Print Orders (Scoped by owner UID, Admin/Staff, and customer proof review)
     match /orders/{orderId} {
       allow get: if isValidId(orderId) && (isAdmin() || isStaff() || (isSignedIn() && existing().customerId == request.auth.uid));
       allow list: if isAdmin() || isStaff() || (isSignedIn() && resource.data.customerId == request.auth.uid);
@@ -643,7 +682,18 @@ service cloud.firestore {
           (
             isStaff() &&
             !(existing().status in ['Delivered', 'Cancelled']) &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'proofStatus', 'proofVersions', 'updatedAt'])
+          ) ||
+          (
+            existing().customerId == request.auth.uid &&
+            !(existing().status in ['Delivered', 'Cancelled']) &&
+            existing().get('proofStatus', 'Awaiting Proof') in ['Proof Uploaded', 'Revision Requested'] &&
+            incoming().status == existing().status &&
+            incoming().subtotal == existing().subtotal &&
+            incoming().total == existing().total &&
+            incoming().items == existing().items &&
+            incoming().proofStatus in ['Approved', 'Revision Requested'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['proofStatus', 'proofVersions', 'approvedProofUrl', 'approvedAt', 'revisionNotes', 'updatedAt'])
           )
         );
       allow delete: if isValidId(orderId) && isAdmin();

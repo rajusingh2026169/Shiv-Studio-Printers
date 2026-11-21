@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db, seedDatabaseIfNeeded, OperationType, handleFirestoreError } from '../../firebase';
 import { Order, Booking, ProductItem, Expense, ServiceItem, GalleryItem, OfferItem, ReviewItem, UserProfile, BlogItem } from '../../types';
-import { STUDIO_IMAGES } from '../../assets/studioAssets';
+import { STUDIO_IMAGES, getImageForSlugOrCategory } from '../../assets/studioAssets';
 import { buildWhatsAppUrl } from '../../components/WhatsAppButton';
+import { uploadBase64ToStorage } from '../../utils/imageUploader';
+import { resolveMediaUrl, applyImageFallback, isEphemeralMediaUrl } from '../../utils/mediaResolver';
 import { 
   TrendingUp, 
   ShoppingBag, 
@@ -910,46 +912,76 @@ export const AdminDashboard: React.FC = () => {
   // Service CRUD Save
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingService) return;
+    if (!sTitle.trim()) {
+      alert('Service title is required.');
+      return;
+    }
+
     setIsSavingService(true);
     try {
-      const servId = editingService ? editingService.id : `serv_${Math.floor(Math.random() * 100000)}`;
+      const rawServId = editingService ? editingService.id : `serv_${Date.now()}`;
+      const servId = /^[a-zA-Z0-9_-]+$/.test(rawServId)
+        ? rawServId.slice(0, 128)
+        : `serv_${rawServId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)}`;
+
       const generatedSlug =
         (sSlug || sTitle)
           .toLowerCase()
           .trim()
           .replace(/[^a-z0-9]+/g, '-')
-          .replace(/(^-|-$)/g, '') || servId;
+          .replace(/(^-|-$)/g, '')
+          .slice(0, 160) || servId;
+
       const deliverablesList = sDeliverablesText
         .split('\n')
         .map((line) => line.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .slice(0, 40);
+
+      let resolvedImage = (sImage || '').trim();
+      if (resolvedImage.startsWith('blob:') || resolvedImage.startsWith('file:')) {
+        throw new Error('Selected image uses a temporary browser link. Please re-upload the image file.');
+      }
+      if (resolvedImage.startsWith('data:')) {
+        resolvedImage = await uploadBase64ToStorage(resolvedImage, 'services');
+      }
+      if (!resolvedImage) {
+        resolvedImage = getImageForSlugOrCategory(sTitle || sCategory);
+      }
+      if (resolvedImage.length > 2048) {
+        throw new Error('Service image URL exceeds 2048 characters.');
+      }
+
+      const safePrice = Number.isFinite(Number(sPrice)) ? Math.max(0, Number(sPrice)) : 0;
 
       const servData: ServiceItem = {
         id: servId,
         slug: generatedSlug,
-        title: sTitle,
-        category: sCategory,
-        shortDescription: sShortDescription.trim(),
-        description: sDescription,
-        price: Number(sPrice),
-        startingPrice: Number(sPrice),
-        image: sImage || STUDIO_IMAGES.heroWedding,
-        coverImage: sImage || STUDIO_IMAGES.heroWedding,
-        gallery: editingService?.gallery || [],
+        title: sTitle.trim().slice(0, 200),
+        category: (sCategory || 'Photography').trim().slice(0, 80) as ServiceItem['category'],
+        shortDescription: sShortDescription.trim().slice(0, 600),
+        description: sDescription.trim().slice(0, 8000),
+        price: safePrice,
+        startingPrice: safePrice,
+        image: resolvedImage,
+        coverImage: resolvedImage,
+        gallery: Array.isArray(editingService?.gallery) ? editingService.gallery.slice(0, 40) : [],
         deliverables: deliverablesList,
-        isPublished: sIsPublished,
-        enableGst: sEnableGst,
-        gstPercent: Number(sGstPercent),
-        gstIncludedInPrice: sGstIncludedInPrice
+        isPublished: Boolean(sIsPublished),
+        enableGst: Boolean(sEnableGst),
+        gstPercent: Number.isFinite(Number(sGstPercent)) ? Number(sGstPercent) : 18,
+        gstIncludedInPrice: Boolean(sGstIncludedInPrice)
       };
 
       await setDoc(doc(db, 'services', servId), servData);
       setShowServiceModal(false);
       setEditingService(null);
       fetchDashboardData();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Error saving service:', err);
       reportPermissionError(err, OperationType.WRITE, 'services');
+      alert(`Failed to save service: ${err?.message || err?.code || 'Check permissions and fields.'}`);
     } finally {
       setIsSavingService(false);
     }
@@ -974,26 +1006,57 @@ export const AdminDashboard: React.FC = () => {
   // Gallery CRUD Save
   const handleSaveGallery = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingGallery) return;
+    if (!gTitle.trim()) {
+      alert('Photo title is required.');
+      return;
+    }
+
     setIsSavingGallery(true);
     try {
-      const gId = editingGallery ? editingGallery.id : `gal_${Math.floor(Math.random() * 100000)}`;
+      const rawGId = editingGallery ? editingGallery.id : `gal_${Date.now()}`;
+      const gId = /^[a-zA-Z0-9_-]+$/.test(rawGId)
+        ? rawGId.slice(0, 128)
+        : `gal_${rawGId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)}`;
+
+      let resolvedImageUrl = (gImageUrl || '').trim();
+      if (resolvedImageUrl.startsWith('blob:') || resolvedImageUrl.startsWith('file:')) {
+        throw new Error('Selected photo uses a temporary browser link. Please upload the image file.');
+      }
+      if (resolvedImageUrl.startsWith('data:')) {
+        resolvedImageUrl = await uploadBase64ToStorage(resolvedImageUrl, 'gallery');
+      }
+      if (!resolvedImageUrl) {
+        resolvedImageUrl = getImageForSlugOrCategory(gCategory);
+      }
+      if (resolvedImageUrl.length > 2048) {
+        throw new Error('Portfolio image URL exceeds 2048 characters.');
+      }
+
+      const now = new Date().toISOString();
+      const safeCreatedAt =
+        typeof editingGallery?.createdAt === 'string' && editingGallery.createdAt.trim()
+          ? editingGallery.createdAt.trim().slice(0, 64)
+          : now;
+
       const gData: GalleryItem = {
         id: gId,
-        title: gTitle,
-        category: gCategory,
-        imageUrl: gImageUrl || STUDIO_IMAGES.heroWedding,
+        title: gTitle.trim().slice(0, 200),
+        category: (gCategory || 'Wedding').trim().slice(0, 80) as GalleryItem['category'],
+        imageUrl: resolvedImageUrl,
         mediaType: 'photo',
-        isFeatured: gIsFeatured,
-        createdAt: editingGallery?.createdAt || new Date().toISOString()
+        isFeatured: Boolean(gIsFeatured),
+        createdAt: safeCreatedAt
       };
 
       await setDoc(doc(db, 'gallery', gId), gData);
       setShowGalleryModal(false);
       setEditingGallery(null);
       fetchDashboardData();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Error saving gallery item:', err);
       reportPermissionError(err, OperationType.WRITE, 'gallery');
+      alert(`Failed to save portfolio photo: ${err?.message || err?.code || 'Check permissions and image URL.'}`);
     } finally {
       setIsSavingGallery(false);
     }
@@ -2165,19 +2228,27 @@ export const AdminDashboard: React.FC = () => {
                   {services.map((s) => (
                     <div key={s.id} className="bg-slate-900 border border-slate-850 p-4 rounded-3xl flex flex-col justify-between">
                       <div>
-                        <img 
-                          src={s.coverImage || s.image || STUDIO_IMAGES.heroWedding} 
-                          alt={s.title} 
-                          className="aspect-video rounded-2xl object-cover w-full bg-slate-950" 
-                          referrerPolicy="no-referrer"
-                        />
+                        <div className="relative">
+                          <img 
+                            src={resolveMediaUrl(s.coverImage || s.image, getImageForSlugOrCategory(s.title || s.category))} 
+                            alt={s.title} 
+                            className="aspect-video rounded-2xl object-cover w-full bg-slate-950" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(s.title || s.category))}
+                          />
+                          {isEphemeralMediaUrl(s.coverImage || s.image) && (
+                            <span className="absolute top-2 left-2 px-2 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-bold font-mono uppercase rounded">
+                              Re-upload image
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-4 space-y-1">
                           <span className="text-xxs font-mono font-bold uppercase tracking-wider text-amber-500 px-2 py-0.5 rounded bg-amber-500/10">
                             {s.category}
                           </span>
                           <h4 className="font-bold text-white text-sm line-clamp-1 mt-2">{s.title}</h4>
                           <p className="text-xxs text-slate-400 line-clamp-2 mt-1">{s.description}</p>
-                          <p className="text-xs text-white font-extrabold font-mono mt-1">₹{s.price.toLocaleString('en-IN')}</p>
+                          <p className="text-xs text-white font-extrabold font-mono mt-1">₹{Number(s.price || 0).toLocaleString('en-IN')}</p>
                         </div>
                       </div>
 
@@ -2558,13 +2629,30 @@ export const AdminDashboard: React.FC = () => {
                     <tbody className="divide-y divide-slate-850">
                       {orders.map((ord) => (
                         <tr key={ord.id} className="hover:bg-slate-850/30">
-                          <td className="py-3.5 max-w-[200px]">
+                          <td className="py-3.5 max-w-[220px]">
                             <p className="font-bold text-white">{ord.customerName}</p>
                             <p className="text-slate-500 text-xxs font-mono">#{ord.id.slice(0, 8).toUpperCase()}</p>
+                            {ord.hasWeddingCards && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                <span className="text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30">
+                                  Wedding Card
+                                </span>
+                                {ord.proofStatus && (
+                                  <span className="text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                                    Proof: {ord.proofStatus}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {ord.weddingCardCustomization && (
+                              <p className="text-[10px] text-neutral-300 font-mono mt-1">
+                                {ord.weddingCardCustomization.groomName} &amp; {ord.weddingCardCustomization.brideName}
+                              </p>
+                            )}
                             {ord.customerRemark ? (
                               <div className="mt-1.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] text-amber-300 font-sans">
                                 <span className="font-bold uppercase text-[9px] text-amber-400 block font-mono">Requirement / Remark:</span>
-                                "{ord.customerRemark}"
+                                &quot;{ord.customerRemark}&quot;
                               </div>
                             ) : (
                               <p className="text-[10px] text-slate-600 mt-1 italic font-mono">No special requirement provided.</p>
@@ -2572,7 +2660,11 @@ export const AdminDashboard: React.FC = () => {
                           </td>
                           <td className="py-3.5 text-slate-300">
                             <ul className="list-disc pl-3 text-xxs space-y-0.5 text-slate-400">
-                              {ord.items.map((it, k) => <li key={k} className="line-clamp-1">{it.productTitle} (x{it.quantity})</li>)}
+                              {ord.items.map((it, k) => (
+                                <li key={k} className="line-clamp-1">
+                                  {it.productTitle}{it.variantName ? ` (${it.variantName})` : ''} (x{it.quantity})
+                                </li>
+                              ))}
                             </ul>
                           </td>
                           <td className="py-3.5 text-slate-300 max-w-[220px]">
@@ -2806,7 +2898,20 @@ export const AdminDashboard: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-sans text-xs">
                   {gallery.map((g) => (
                     <div key={g.id} className="bg-slate-900 border border-slate-850 p-3 rounded-2xl relative group">
-                      <img src={g.imageUrl} alt={g.title} className="aspect-video w-full object-cover rounded-xl bg-slate-950" referrerPolicy="no-referrer" />
+                      <div className="relative">
+                        <img
+                          src={resolveMediaUrl(g.imageUrl, getImageForSlugOrCategory(g.category))}
+                          alt={g.title}
+                          className="aspect-video w-full object-cover rounded-xl bg-slate-950"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(g.category))}
+                        />
+                        {isEphemeralMediaUrl(g.imageUrl) && (
+                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-bold font-mono uppercase rounded">
+                            Re-upload image
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-2.5">
                         <p className="font-semibold text-white truncate">{g.title || 'Portfolio Work'}</p>
                         <p className="text-xxs text-slate-500 font-mono uppercase">{g.category}</p>

@@ -1,20 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ServiceItem } from '../types';
 import { SERVICE_DEFINITIONS } from '../data/studioCatalog';
 import { getImageForSlugOrCategory } from '../assets/studioAssets';
+import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
 import { ArrowRight, CalendarDays, MessageCircle } from 'lucide-react';
 
+const ALLOWED_SERVICE_CATEGORIES = ['All', 'Photography', 'Videography', 'Design', 'Printing'];
+
 export const Services: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const initialCatParam = searchParams.get('category');
+  const resolvedInitialFilter =
+    initialCatParam && ALLOWED_SERVICE_CATEGORIES.includes(initialCatParam) ? initialCatParam : 'All';
+
   const [services, setServices] = useState<ServiceItem[]>([]);
-  const [filter, setFilter] = useState<string>('All');
+  const [filter, setFilter] = useState<string>(resolvedInitialFilter);
   const [loading, setLoading] = useState(true);
   const [whatsappNumber, setWhatsappNumber] = useState('+917905256355');
+
+  useEffect(() => {
+    const paramCat = searchParams.get('category');
+    if (paramCat && ALLOWED_SERVICE_CATEGORIES.includes(paramCat)) {
+      setFilter(paramCat);
+    } else {
+      setFilter('All');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchServices = async () => {
@@ -153,11 +170,12 @@ export const Services: React.FC = () => {
                   <div>
                     <Link to={detailRoute} className="block relative aspect-[4/3] overflow-hidden bg-[#111111]">
                       <img
-                        src={service.image || service.coverImage || getImageForSlugOrCategory(service.title)}
+                        src={resolveMediaUrl(service.image || service.coverImage, getImageForSlugOrCategory(service.title))}
                         alt={service.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         loading="lazy"
                         referrerPolicy="no-referrer"
+                        onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(service.title))}
                       />
                     </Link>
 

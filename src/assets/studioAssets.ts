@@ -7,6 +7,9 @@ import luxuryAlbumFrameImg from './images/luxury_album_frame_1795227823341.jpg';
 import studioPortraitImg from './images/studio_portrait_creative_1795227823438.jpg';
 import engagementRingImg from './images/engagement_ring_ceremony_1795227839261.jpg';
 import birthdayEventImg from './images/birthday_celebration_event_1795227839433.jpg';
+import royalWeddingInviteImg from './images/royal_wedding_invitation_1795251570928.jpg';
+import luxuryBoxInviteImg from './images/luxury_box_invitation_1795251570682.jpg';
+import digitalWeddingCardImg from './images/digital_wedding_card_1795251571194.jpg';
 
 export const STUDIO_IMAGES = {
   logo: logoImg,
@@ -18,6 +21,9 @@ export const STUDIO_IMAGES = {
   studioPortrait: studioPortraitImg,
   engagementRing: engagementRingImg,
   birthdayEvent: birthdayEventImg,
+  royalWeddingInvite: royalWeddingInviteImg,
+  luxuryBoxInvite: luxuryBoxInviteImg,
+  digitalWeddingCard: digitalWeddingCardImg,
 };
 
 export function getImageForSlugOrCategory(key?: string): string {

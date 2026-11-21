@@ -147,12 +147,39 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, doc
 
     if (type === 'order' && order) {
       order.items.forEach((item) => {
-        const itemDesc = item.variantName ? `${item.productTitle} (${item.variantName})` : item.productTitle;
+        const itemLineTotal = item.price * item.quantity + (item.printingCharge || 0) + (item.customizationCharge || 0);
+        const itemDesc = item.designCode
+          ? `${item.productTitle}`
+          : item.variantName
+            ? `${item.productTitle} (${item.variantName})`
+            : item.productTitle;
         doc.text(itemDesc, 18, startY);
         doc.text(item.quantity.toString(), 125, startY);
         doc.text(`Rs. ${item.price.toFixed(2)}`, 145, startY);
-        doc.text(`Rs. ${(item.price * item.quantity).toFixed(2)}`, 175, startY);
-        startY += 8;
+        doc.text(`Rs. ${itemLineTotal.toFixed(2)}`, 175, startY);
+        startY += 6;
+        if (item.itemType === 'wedding_card' || item.weddingCardCustomization) {
+          doc.setFontSize(7.5);
+          doc.setTextColor(100, 116, 139);
+          const subMeta = [
+            item.selectedColor ? `Color: ${item.selectedColor}` : '',
+            item.selectedFinish ? `Finish: ${item.selectedFinish}` : '',
+            item.printingCharge ? `Print: Rs.${item.printingCharge}` : '',
+            item.customizationCharge ? `Custom: Rs.${item.customizationCharge}` : ''
+          ].filter(Boolean).join(' | ');
+          if (subMeta) {
+            doc.text(subMeta, 20, startY);
+            startY += 4.5;
+          }
+          if (item.weddingCardCustomization) {
+            const custLine = `${item.weddingCardCustomization.groomName} & ${item.weddingCardCustomization.brideName} | ${item.weddingCardCustomization.weddingDate} | ${item.weddingCardCustomization.language}`;
+            doc.text(custLine, 20, startY);
+            startY += 4.5;
+          }
+          doc.setFontSize(9);
+          doc.setTextColor(15, 23, 42);
+        }
+        startY += 2;
       });
 
       doc.line(15, startY + 2, 195, startY + 2);
@@ -162,6 +189,22 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, doc
       doc.text('Subtotal:', 130, startY);
       doc.text(`Rs. ${order.subtotal.toFixed(2)}`, 170, startY);
       startY += 6;
+
+      if ((order.printingCharge || 0) > 0) {
+        doc.setFontSize(8);
+        doc.text('  (Incl. Printing Charges):', 130, startY);
+        doc.text(`Rs. ${(order.printingCharge || 0).toFixed(2)}`, 170, startY);
+        doc.setFontSize(9);
+        startY += 5.5;
+      }
+
+      if ((order.customizationCharge || 0) > 0) {
+        doc.setFontSize(8);
+        doc.text('  (Incl. Customization):', 130, startY);
+        doc.text(`Rs. ${(order.customizationCharge || 0).toFixed(2)}`, 170, startY);
+        doc.setFontSize(9);
+        startY += 5.5;
+      }
 
       if (isGstEnabled) {
         doc.text(`GST (${gstPercentage}%):`, 130, startY);
@@ -461,21 +504,38 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, doc
               </thead>
               <tbody>
                 {order ? (
-                  order.items.map((item, index) => (
-                    <tr key={index} className="border-b border-slate-900 hover:bg-slate-900/20">
-                      <td className="py-3 px-4 font-semibold text-white">
-                        <div>{item.productTitle}</div>
-                        {item.variantName && (
-                          <div className="text-[11px] font-normal text-amber-400 font-mono mt-0.5">
-                            Size/Variant: {item.variantName}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">{item.quantity}</td>
-                      <td className="py-3 px-4 text-right">₹{item.price.toLocaleString('en-IN')}</td>
-                      <td className="py-3 px-4 text-right text-white">₹{(item.price * item.quantity).toLocaleString('en-IN')}</td>
-                    </tr>
-                  ))
+                  order.items.map((item, index) => {
+                    const lineTotal = item.price * item.quantity + (item.printingCharge || 0) + (item.customizationCharge || 0);
+                    return (
+                      <tr key={index} className="border-b border-slate-900 hover:bg-slate-900/20">
+                        <td className="py-3 px-4 font-semibold text-white">
+                          <div>{item.productTitle}</div>
+                          {item.variantName && (
+                            <div className="text-[11px] font-normal text-amber-400 font-mono mt-0.5">
+                              {item.itemType === 'wedding_card' ? item.variantName : `Size/Variant: ${item.variantName}`}
+                            </div>
+                          )}
+                          {item.itemType === 'wedding_card' && (
+                            <div className="text-[10px] font-normal text-slate-400 mt-1 space-y-0.5">
+                              {((item.printingCharge || 0) > 0 || (item.customizationCharge || 0) > 0) && (
+                                <div>
+                                  Print: ₹{(item.printingCharge || 0).toLocaleString('en-IN')} • Customization: ₹{(item.customizationCharge || 0).toLocaleString('en-IN')}
+                                </div>
+                              )}
+                              {item.weddingCardCustomization && (
+                                <div className="text-amber-300/90">
+                                  Couple: {item.weddingCardCustomization.groomName} &amp; {item.weddingCardCustomization.brideName} ({item.weddingCardCustomization.weddingDate}, {item.weddingCardCustomization.language})
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">{item.quantity}</td>
+                        <td className="py-3 px-4 text-right">₹{item.price.toLocaleString('en-IN')}</td>
+                        <td className="py-3 px-4 text-right text-white">₹{lineTotal.toLocaleString('en-IN')}</td>
+                      </tr>
+                    );
+                  })
                 ) : booking ? (
                   <tr className="border-b border-slate-900">
                     <td className="py-3 px-4 font-semibold text-white">
@@ -500,6 +560,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, doc
                     <span className="text-slate-400">Subtotal:</span>
                     <span className="text-white font-medium">₹{order.subtotal.toLocaleString('en-IN')}</span>
                   </div>
+                  {(order.printingCharge || 0) > 0 && (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">• Included Printing Charges:</span>
+                      <span className="text-slate-300">₹{(order.printingCharge || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {(order.customizationCharge || 0) > 0 && (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">• Included Customization Charges:</span>
+                      <span className="text-slate-300">₹{(order.customizationCharge || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                   {isGstEnabled && (
                     <div className="flex justify-between">
                       <span className="text-slate-400">GST ({gstPercentage}%):</span>

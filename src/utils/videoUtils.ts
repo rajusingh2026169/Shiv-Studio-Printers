@@ -415,7 +415,11 @@ export function uploadVideoResumable(
     let settled = false;
     let fallbackTriggered = false;
 
-    const triggerFallbackUpload = async () => {
+    const isLocalHost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    const triggerFallbackUpload = async (origError?: any) => {
       if (fallbackTriggered || settled) return;
       fallbackTriggered = true;
       try {
@@ -423,23 +427,29 @@ export function uploadVideoResumable(
       } catch {
         // ignore cancel error
       }
-      try {
-        console.warn('[Video System] Switching video upload to local Express /api/upload endpoint...');
-        const apiUrl = await uploadVideoViaApi(file, onProgress);
-        settled = true;
-        resolve(apiUrl);
-      } catch (apiErr) {
-        settled = true;
-        reject(apiErr);
+      if (isLocalHost) {
+        try {
+          console.warn('[Video System] Switching video upload to local Express /api/upload endpoint...');
+          const apiUrl = await uploadVideoViaApi(file, onProgress);
+          settled = true;
+          resolve(apiUrl);
+          return;
+        } catch (apiErr) {
+          settled = true;
+          reject(apiErr);
+          return;
+        }
       }
+      settled = true;
+      reject(new Error(mapFirebaseStorageError(origError || new Error('Video upload to Firebase Storage failed or timed out.'))));
     };
 
-    // Guard against Firebase Storage silent stall in environments without Storage CORS/bucket
+    // Guard against stalled Firebase Storage initialization (15s)
     const stallTimer = setTimeout(() => {
       if (!settled && lastBytes === 0) {
-        triggerFallbackUpload();
+        triggerFallbackUpload(new Error('Firebase Storage upload did not start within 15 seconds.'));
       }
-    }, 6000);
+    }, 15000);
 
     uploadTask.on(
       'state_changed',
@@ -479,8 +489,8 @@ export function uploadVideoResumable(
       (error) => {
         clearTimeout(stallTimer);
         if (settled || fallbackTriggered) return;
-        console.warn('[Video System] Firebase Storage upload notice, attempting server fallback:', error?.code || error?.message);
-        triggerFallbackUpload();
+        console.warn('[Video System] Firebase Storage upload notice:', error?.code || error?.message);
+        triggerFallbackUpload(error);
       },
       async () => {
         clearTimeout(stallTimer);
@@ -491,8 +501,8 @@ export function uploadVideoResumable(
           settled = true;
           resolve(downloadUrl);
         } catch (urlErr) {
-          console.warn('[Video System] Error retrieving download URL, attempting server fallback:', urlErr);
-          triggerFallbackUpload();
+          console.warn('[Video System] Error retrieving download URL:', urlErr);
+          triggerFallbackUpload(urlErr);
         }
       }
     );
@@ -568,31 +578,16 @@ export async function uploadThumbnailResumable(
     cacheControl: 'public,max-age=31536000'
   };
 
-  // Prefer fast local /api/upload for thumbnail blobs before Firebase Storage
-  try {
-    const formData = new FormData();
-    formData.append('file', blobToUpload, `thumb_${timestamp}.${ext}`);
-    const resp = await fetch('/api/upload', { method: 'POST', body: formData });
-    if (resp.ok) {
-      const json = await resp.json();
-      if (json?.url) {
-        return json.url;
-      }
-    }
-  } catch {
-    // fallback to Firebase Storage below
-  }
-
+  // Upload thumbnail directly to Firebase Storage (25s timeout) so it works identically in production
   try {
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Thumbnail storage upload timeout')), 10000)
+      setTimeout(() => reject(new Error('Thumbnail storage upload timeout')), 25000)
     );
     await Promise.race([
       uploadBytes(storageRef, blobToUpload, metadata),
       timeoutPromise
     ]);
     const downloadUrl = await getDownloadURL(storageRef);
-    console.log(`[Video System] Thumbnail Uploaded to Firebase Storage: ${downloadUrl}`);
     return downloadUrl;
   } catch (err) {
     console.warn('[Video System] Storage thumbnail upload notice, using fallback asset:', err);

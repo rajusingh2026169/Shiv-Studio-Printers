@@ -136,11 +136,17 @@ const MainAppContent: React.FC = () => {
     }
   };
 
+  const handleAddCustomCartItem = (customItem: CartItem) => {
+    saveCart([...cart, customItem]);
+  };
+
   const handleUpdateQuantity = (cartItemId: string, quantity: number, variantId?: string) => {
     const updated = cart.map(item => {
       const matches = item.id === cartItemId || 
         (item.productId === cartItemId && (variantId === undefined || (item.selectedVariantId || '') === (variantId || '')));
-      return matches ? { ...item, quantity: Math.max(1, quantity) } : item;
+      if (!matches) return item;
+      const minQty = item.isDigital ? 1 : (item.minOrderQuantity || 1);
+      return { ...item, quantity: item.isDigital ? 1 : Math.max(minQty, quantity) };
     });
     saveCart(updated);
   };
@@ -182,7 +188,7 @@ const MainAppContent: React.FC = () => {
   return (
     <div className="bg-[#111111] text-white min-h-screen flex flex-col justify-between font-sans selection:bg-[#D4AF37] selection:text-[#111111]">
       <Navbar 
-        cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)} 
+        cartCount={cart.reduce((sum, item) => sum + (item.itemType === 'wedding_card' ? 1 : item.quantity), 0)} 
         wishlistCount={wishlist.length} 
       />
 
@@ -197,7 +203,7 @@ const MainAppContent: React.FC = () => {
           <Route path="/portfolio" element={<Gallery />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/wedding-cards" element={<WeddingCards />} />
-          <Route path="/wedding-cards/:id" element={<WeddingCardDetail />} />
+          <Route path="/wedding-cards/:id" element={<WeddingCardDetail onAddWeddingCardToCart={handleAddCustomCartItem} />} />
           
           <Route 
             path="/store" 

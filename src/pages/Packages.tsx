@@ -7,6 +7,7 @@ import { getDefaultPackagesForSeed } from '../data/studioCatalog';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
 import { getImageForSlugOrCategory } from '../assets/studioAssets';
+import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 import { Check, Clock, Image as ImageIcon, Film, BookOpen, Frame, MessageCircle, CalendarDays } from 'lucide-react';
 
 const PACKAGE_CATEGORIES = [
@@ -131,11 +132,12 @@ export const Packages: React.FC = () => {
                   <div>
                     <div className="relative aspect-[4/3] overflow-hidden bg-[#111111]">
                       <img
-                        src={pkg.image || getImageForSlugOrCategory(pkg.category)}
+                        src={resolveMediaUrl(pkg.image, getImageForSlugOrCategory(pkg.category))}
                         alt={pkg.name}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         referrerPolicy="no-referrer"
+                        onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(pkg.category))}
                       />
                     </div>
 

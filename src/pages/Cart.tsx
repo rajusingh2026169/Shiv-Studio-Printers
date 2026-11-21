@@ -5,8 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { db, storage } from '../firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
-import { CartItem, ProductItem, Order, CouponValidationResult, UploadedFileRecord } from '../types';
+import { CartItem, ProductItem, Order, CouponValidationResult, UploadedFileRecord, WeddingCardItem, WeddingCardCustomization } from '../types';
 import { validateCoupon, redeemCoupon, findAutoApplyCoupon, CartItemForValidation } from '../utils/couponEngine';
+import { calculateWeddingCardPriceBreakdown } from '../utils/weddingCardPricing';
 import { uploadOriginalClientPhoto, formatBytes, cleanFileName, UploadProgressDetails } from '../utils/clientPhotoUploader';
 import { sendOrderMessage } from '../utils/messageService';
 import { 
@@ -77,6 +78,29 @@ export const Cart: React.FC<CartProps> = ({
     return item.product.discountPrice || item.product.price;
   };
 
+  // Helper to get full line subtotal (includes printing & customization charges for wedding cards)
+  const getItemLineSubtotal = (item: CartItem): number => {
+    const unitPrice = getItemUnitPrice(item);
+    return unitPrice * item.quantity + (item.printingCharge || 0) + (item.customizationCharge || 0);
+  };
+
+  // Helper to recursively omit undefined keys for Firestore safety
+  const stripUndefined = <T,>(val: T): T => {
+    if (Array.isArray(val)) {
+      return val.map((v) => stripUndefined(v)) as unknown as T;
+    }
+    if (val && typeof val === 'object') {
+      const out: Record<string, any> = {};
+      Object.entries(val as Record<string, any>).forEach(([k, v]) => {
+        if (v !== undefined) {
+          out[k] = stripUndefined(v);
+        }
+      });
+      return out as T;
+    }
+    return val;
+  };
+
   // Address Details
   const [fullName, setFullName] = useState(userProfile?.fullName || '');
   const [phone, setPhone] = useState(userProfile?.phone || '');
@@ -138,19 +162,15 @@ export const Cart: React.FC<CartProps> = ({
   const [paymentSuccessData, setPaymentSuccessData] = useState<Order | null>(null);
   const [isPaying, setIsPaying] = useState(false);
 
-  // Totals calculated dynamically with variant unit prices
-  const subtotal = cart.reduce((acc, item) => {
-    const price = getItemUnitPrice(item);
-    return acc + price * item.quantity;
-  }, 0);
+  // Totals calculated dynamically with variant unit prices & wedding card charges
+  const subtotal = cart.reduce((acc, item) => acc + getItemLineSubtotal(item), 0);
+  const totalPrintingCharges = cart.reduce((acc, item) => acc + (item.printingCharge || 0), 0);
+  const totalCustomizationCharges = cart.reduce((acc, item) => acc + (item.customizationCharge || 0), 0);
 
-  // Dynamic Shipping Calculation (Free above threshold, or based on product configurations)
-  const shippingEnabledItems = cart.filter(item => item.product.enableShipping !== false);
-  
-  const shippingSubtotal = shippingEnabledItems.reduce((acc, item) => {
-    const price = getItemUnitPrice(item);
-    return acc + price * item.quantity;
-  }, 0);
+  // Dynamic Shipping Calculation (Free above threshold, or based on product/card configurations)
+  const shippingEnabledItems = cart.filter(item => item.product.enableShipping !== false && !item.isDigital);
+
+  const shippingSubtotal = shippingEnabledItems.reduce((acc, item) => acc + getItemLineSubtotal(item), 0);
 
   const defaultDeliveryCharge = settings.deliveryCharge !== undefined ? Number(settings.deliveryCharge) : 150;
   const freeThreshold = settings.freeDeliveryThreshold !== undefined ? Number(settings.freeDeliveryThreshold) : 1500;
@@ -158,17 +178,27 @@ export const Cart: React.FC<CartProps> = ({
   let shipping = 0;
   if (shippingEnabledItems.length > 0) {
     const allFree = shippingEnabledItems.every(item => item.product.delivery?.freeShipping === true || item.product.freeShipping === true);
-    
+
     if (shippingSubtotal >= freeThreshold || allFree) {
       shipping = 0;
     } else {
       let customChargesTotal = 0;
       let hasStandardItems = false;
-      
+
       shippingEnabledItems.forEach(item => {
         const isItemFree = item.product.delivery?.freeShipping === true || item.product.freeShipping === true;
         if (isItemFree) return;
-        
+
+        if (item.itemType === 'wedding_card') {
+          const cardShip = item.cardShippingCharge ?? item.product.shippingCharge ?? 0;
+          if (cardShip > 0) {
+            customChargesTotal += cardShip;
+          } else {
+            hasStandardItems = true;
+          }
+          return;
+        }
+
         const customCharge = item.product.delivery?.shippingCharge || item.product.shippingCharge || 0;
         if (customCharge > 0) {
           customChargesTotal += customCharge * item.quantity;
@@ -176,7 +206,7 @@ export const Cart: React.FC<CartProps> = ({
           hasStandardItems = true;
         }
       });
-      
+
       shipping = customChargesTotal;
       if (hasStandardItems) {
         shipping += defaultDeliveryCharge;
@@ -184,15 +214,14 @@ export const Cart: React.FC<CartProps> = ({
     }
   }
 
-  // Dynamic Inclusive GST Calculation based on per-product configuration and variant prices
+  // Dynamic Inclusive GST Calculation based on per-product configuration and variant/card prices
   const gst = cart.reduce((acc, item) => {
     const isGstEnabled = item.product.enableGst !== false;
     if (!isGstEnabled) return acc;
-    
-    const price = getItemUnitPrice(item);
+
     const itemGstPercent = item.product.gstPercent !== undefined ? item.product.gstPercent : 18;
-    const itemSubtotal = price * item.quantity;
-    
+    const itemSubtotal = getItemLineSubtotal(item);
+
     // Calculate inclusive GST
     const itemGst = Math.round(itemSubtotal * (itemGstPercent / 100));
     return acc + itemGst;
@@ -202,16 +231,28 @@ export const Cart: React.FC<CartProps> = ({
   const discount = appliedCouponResult?.isValid ? (appliedCouponResult.calculatedDiscount || 0) : 0;
   const grandTotal = Math.max(0, subtotal + shipping - discount);
 
-  // Helper to map cart items for validation with variant names and variant prices
+  // Helper to map cart items for validation with variant names, wedding cards and prices
   const getCartItemsForValidation = (): CartItemForValidation[] => {
-    return cart.map(item => ({
-      productId: item.productId || item.product.id,
-      productTitle: item.selectedVariantName ? `${item.product.title} (${item.selectedVariantName})` : item.product.title,
-      price: getItemUnitPrice(item),
-      quantity: item.quantity,
-      category: item.product.category,
-      serviceCategory: item.product.category === 'Printing' ? 'Printing' : item.product.category === 'Photography' ? 'Photography' : undefined
-    }));
+    return cart.map(item => {
+      if (item.itemType === 'wedding_card') {
+        return {
+          productId: item.weddingCardId || item.productId || item.product.id,
+          productTitle: item.product.title,
+          price: getItemLineSubtotal(item),
+          quantity: 1,
+          category: item.isDigital ? 'Digital Invitations' : 'Wedding Cards',
+          serviceCategory: 'Printing'
+        };
+      }
+      return {
+        productId: item.productId || item.product.id,
+        productTitle: item.selectedVariantName ? `${item.product.title} (${item.selectedVariantName})` : item.product.title,
+        price: getItemUnitPrice(item),
+        quantity: item.quantity,
+        category: item.product.category,
+        serviceCategory: item.product.category === 'Printing' ? 'Printing' : item.product.category === 'Photography' ? 'Photography' : undefined
+      };
+    });
   };
 
   // Auto-apply check effect
@@ -417,7 +458,23 @@ export const Cart: React.FC<CartProps> = ({
     setIsPaying(true);
     try {
       const orderId = `LM-${Math.floor(100000 + Math.random() * 900000)}`;
-      const sanitizedUploadedFiles: UploadedFileRecord[] = uploadedFiles.map(f => ({
+
+      // Gather cart uploaded files + any wedding card customization reference files
+      const combinedFiles: UploadedFileRecord[] = [...uploadedFiles];
+      cart.forEach((item) => {
+        (item.weddingCardCustomization?.referenceFiles || []).forEach((refFile) => {
+          const refUrl = refFile.originalFileUrl || refFile.url || '';
+          const refName = refFile.originalFileName || refFile.name || '';
+          const alreadyExists = combinedFiles.some(
+            (existing) => (existing.originalFileUrl || existing.url) === refUrl && (existing.originalFileName || existing.name) === refName
+          );
+          if (!alreadyExists && refUrl) {
+            combinedFiles.push(refFile);
+          }
+        });
+      });
+
+      const sanitizedUploadedFiles: UploadedFileRecord[] = combinedFiles.map(f => ({
         originalFileUrl: (f.originalFileUrl && !f.originalFileUrl.startsWith('data:')) ? f.originalFileUrl : (f.url && !f.url.startsWith('data:') ? f.url : ''),
         originalFileName: f.originalFileName || f.name || 'photo.jpg',
         originalFileType: f.originalFileType || 'image/jpeg',
@@ -434,24 +491,100 @@ export const Cart: React.FC<CartProps> = ({
 
       const primaryFileUrl = sanitizedUploadedFiles[0]?.originalFileUrl || sanitizedUploadedFiles[0]?.url || '';
 
-      // Secure Server-side Firestore Price Verification for Products & Variants
-      const verifiedOrderItems: {
-        productId: string;
-        productTitle: string;
-        variantId?: string;
-        variantName?: string;
-        variantPrice?: number;
-        price: number;
-        quantity: number;
-        image: string;
-      }[] = [];
+      // Secure Server-side Firestore Price Verification for Products, Variants & Wedding Cards
+      const verifiedOrderItems: Order['items'] = [];
 
       let verifiedSubtotal = 0;
+      let verifiedPrintingTotal = 0;
+      let verifiedCustomizationTotal = 0;
+      let hasWeddingCards = false;
+      let hasRegularProducts = false;
+      let firstCardCustomization: WeddingCardCustomization | undefined;
+
+      const verifiedShippingLines: { item: CartItem; verifiedShippingCharge: number; verifiedLineSubtotal: number; verifiedGstPercent: number }[] = [];
 
       for (const item of cart) {
+        if (item.itemType === 'wedding_card') {
+          hasWeddingCards = true;
+          const cardId = item.weddingCardId || item.productId || item.product.id;
+          let breakdown = calculateWeddingCardPriceBreakdown(
+            {
+              id: cardId,
+              price: getItemUnitPrice(item),
+              minOrderQuantity: item.minOrderQuantity,
+              printingCharge: item.printingCharge,
+              customizationCharge: item.customizationCharge,
+              shippingCharge: item.cardShippingCharge,
+              isDigital: item.isDigital,
+              digitalType: item.digitalType,
+              customizationAvailable: true
+            },
+            item.quantity
+          );
+          let verifiedGstPercent = item.product.gstPercent ?? 12;
+          let verifiedEnableGst = item.product.enableGst !== false;
+          let verifiedIsDigital = Boolean(item.isDigital);
+
+          try {
+            const cardSnap = await getDoc(doc(db, 'wedding_cards', cardId));
+            if (cardSnap.exists()) {
+              const cardData = { id: cardSnap.id, ...cardSnap.data() } as WeddingCardItem;
+              breakdown = calculateWeddingCardPriceBreakdown(cardData, item.quantity);
+              verifiedGstPercent = cardData.gstPercent ?? 12;
+              verifiedEnableGst = cardData.enableGst ?? true;
+              verifiedIsDigital = Boolean(cardData.isDigital || item.isDigital);
+            }
+          } catch (verErr) {
+            console.warn('Notice: Firestore wedding card price verification fallback to client item', verErr);
+          }
+
+          const lineSubtotal = breakdown.cardsSubtotal + breakdown.printingCharge + breakdown.customizationCharge;
+          verifiedSubtotal += lineSubtotal;
+          verifiedPrintingTotal += breakdown.printingCharge;
+          verifiedCustomizationTotal += breakdown.customizationCharge;
+
+          if (!firstCardCustomization && item.weddingCardCustomization) {
+            firstCardCustomization = stripUndefined(item.weddingCardCustomization);
+          }
+
+          verifiedOrderItems.push(
+            stripUndefined({
+              productId: cardId,
+              productTitle: item.product.title,
+              variantId: item.selectedVariantId || undefined,
+              variantName: item.selectedVariantName || undefined,
+              variantPrice: breakdown.unitPrice,
+              price: breakdown.unitPrice,
+              quantity: breakdown.quantity,
+              image: item.product.image?.startsWith('data:') ? '' : item.product.image,
+              itemType: 'wedding_card',
+              designCode: item.designCode || '',
+              selectedColor: item.selectedColor || item.weddingCardCustomization?.selectedColor || '',
+              selectedFinish: item.selectedFinish || item.weddingCardCustomization?.selectedFinish || '',
+              printingCharge: breakdown.printingCharge,
+              customizationCharge: breakdown.customizationCharge,
+              isDigital: verifiedIsDigital,
+              digitalType: item.digitalType || undefined,
+              weddingCardCustomization: item.weddingCardCustomization ? stripUndefined(item.weddingCardCustomization) : undefined
+            })
+          );
+
+          verifiedShippingLines.push({
+            item: { ...item, isDigital: verifiedIsDigital, product: { ...item.product, enableGst: verifiedEnableGst, freeShipping: verifiedIsDigital || breakdown.shippingCharge === 0 } },
+            verifiedShippingCharge: breakdown.shippingCharge,
+            verifiedLineSubtotal: lineSubtotal,
+            verifiedGstPercent: verifiedEnableGst ? verifiedGstPercent : 0
+          });
+          continue;
+        }
+
+        hasRegularProducts = true;
         const prodId = item.productId || item.product.id;
         let verifiedUnitPrice = getItemUnitPrice(item);
         let verifiedVariantName = item.selectedVariantName;
+        let verifiedGstPercent = item.product.gstPercent !== undefined ? item.product.gstPercent : 18;
+        let verifiedEnableGst = item.product.enableGst !== false;
+        let verifiedShippingCharge = item.product.delivery?.shippingCharge || item.product.shippingCharge || 0;
 
         try {
           const prodSnap = await getDoc(doc(db, 'products', prodId));
@@ -466,37 +599,76 @@ export const Cart: React.FC<CartProps> = ({
             } else if (prodData.discountPrice || prodData.price) {
               verifiedUnitPrice = prodData.discountPrice || prodData.price;
             }
+            verifiedGstPercent = prodData.gstPercent !== undefined ? prodData.gstPercent : verifiedGstPercent;
+            verifiedEnableGst = prodData.enableGst !== false;
+            verifiedShippingCharge = prodData.delivery?.shippingCharge || prodData.shippingCharge || verifiedShippingCharge;
           }
         } catch (verErr) {
           console.warn('Notice: Firestore price verification fallback to client item price', verErr);
         }
 
-        verifiedSubtotal += verifiedUnitPrice * item.quantity;
-        verifiedOrderItems.push({
-          productId: prodId,
-          productTitle: item.product.title,
-          variantId: item.selectedVariantId || undefined,
-          variantName: verifiedVariantName || undefined,
-          variantPrice: item.selectedVariantId ? verifiedUnitPrice : undefined,
-          price: verifiedUnitPrice,
-          quantity: item.quantity,
-          image: item.product.image?.startsWith('data:') ? '' : item.product.image
+        const lineSubtotal = verifiedUnitPrice * item.quantity;
+        verifiedSubtotal += lineSubtotal;
+        verifiedOrderItems.push(
+          stripUndefined({
+            productId: prodId,
+            productTitle: item.product.title,
+            variantId: item.selectedVariantId || undefined,
+            variantName: verifiedVariantName || undefined,
+            variantPrice: item.selectedVariantId ? verifiedUnitPrice : undefined,
+            price: verifiedUnitPrice,
+            quantity: item.quantity,
+            image: item.product.image?.startsWith('data:') ? '' : item.product.image,
+            itemType: 'product'
+          })
+        );
+
+        verifiedShippingLines.push({
+          item: { ...item, product: { ...item.product, enableGst: verifiedEnableGst } },
+          verifiedShippingCharge,
+          verifiedLineSubtotal: lineSubtotal,
+          verifiedGstPercent: verifiedEnableGst ? verifiedGstPercent : 0
         });
       }
 
+      // Re-verify Shipping with Firestore-verified subtotals
+      const verifiedShipEligible = verifiedShippingLines.filter(l => l.item.product.enableShipping !== false && !l.item.isDigital);
+      let verifiedShipping = 0;
+      if (verifiedShipEligible.length > 0) {
+        const verifiedShipSubtotal = verifiedShipEligible.reduce((acc, l) => acc + l.verifiedLineSubtotal, 0);
+        const allVerifiedFree = verifiedShipEligible.every(l => l.item.product.delivery?.freeShipping === true || l.item.product.freeShipping === true);
+        if (verifiedShipSubtotal >= freeThreshold || allVerifiedFree) {
+          verifiedShipping = 0;
+        } else {
+          let customShip = 0;
+          let needsDefault = false;
+          verifiedShipEligible.forEach(l => {
+            const isFree = l.item.product.delivery?.freeShipping === true || l.item.product.freeShipping === true;
+            if (isFree) return;
+            if (l.item.itemType === 'wedding_card') {
+              if (l.verifiedShippingCharge > 0) customShip += l.verifiedShippingCharge;
+              else needsDefault = true;
+            } else if (l.verifiedShippingCharge > 0) {
+              customShip += l.verifiedShippingCharge * l.item.quantity;
+            } else {
+              needsDefault = true;
+            }
+          });
+          verifiedShipping = customShip + (needsDefault ? defaultDeliveryCharge : 0);
+        }
+      }
+
       // Re-verify GST with verified subtotal
-      const verifiedGst = cart.reduce((acc, item) => {
-        const isGstEnabled = item.product.enableGst !== false;
-        if (!isGstEnabled) return acc;
-        const matchedVerified = verifiedOrderItems.find(v => v.productId === (item.productId || item.product.id) && (v.variantId || '') === (item.selectedVariantId || ''));
-        const price = matchedVerified ? matchedVerified.price : getItemUnitPrice(item);
-        const itemGstPercent = item.product.gstPercent !== undefined ? item.product.gstPercent : 18;
-        return acc + Math.round(price * item.quantity * (itemGstPercent / 100));
+      const verifiedGst = verifiedShippingLines.reduce((acc, line) => {
+        if (!line.verifiedGstPercent) return acc;
+        return acc + Math.round(line.verifiedLineSubtotal * (line.verifiedGstPercent / 100));
       }, 0);
 
-      const verifiedGrandTotal = Math.max(0, verifiedSubtotal + shipping - discount);
+      const verifiedGrandTotal = Math.max(0, verifiedSubtotal + verifiedShipping - discount);
+      const computedOrderType: Order['orderType'] =
+        hasWeddingCards && hasRegularProducts ? 'mixed' : hasWeddingCards ? 'wedding_card' : 'store';
 
-      const orderData: Order = {
+      const rawOrderData: Order = {
         id: orderId,
         customerId: currentUser?.uid || 'anonymous',
         customerName: fullName,
@@ -510,10 +682,10 @@ export const Cart: React.FC<CartProps> = ({
         customerRemark: customerRemark.trim(),
         subtotal: verifiedSubtotal,
         gst: verifiedGst,
-        gstEnabled: cart.some(item => item.product.enableGst !== false),
-        gstPercentage: cart.reduce((max, item) => item.product.enableGst !== false ? Math.max(max, item.product.gstPercent ?? 18) : max, 0) || 18,
+        gstEnabled: verifiedShippingLines.some(l => l.verifiedGstPercent > 0),
+        gstPercentage: verifiedShippingLines.reduce((max, l) => Math.max(max, l.verifiedGstPercent), 0) || 18,
         gstAmount: verifiedGst,
-        shipping,
+        shipping: verifiedShipping,
         discount,
         couponCode: appliedCouponResult?.coupon?.code || '',
         couponName: appliedCouponResult?.coupon?.name || '',
@@ -530,8 +702,21 @@ export const Cart: React.FC<CartProps> = ({
         dueAmount: 0,
         status: 'Pending',
         paymentId: `pay_${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        orderType: computedOrderType,
+        hasWeddingCards,
+        ...(hasWeddingCards
+          ? {
+              printingCharge: verifiedPrintingTotal,
+              customizationCharge: verifiedCustomizationTotal,
+              proofStatus: 'Awaiting Proof' as const,
+              proofVersions: [],
+              ...(firstCardCustomization ? { weddingCardCustomization: firstCardCustomization } : {})
+            }
+          : {})
       };
+
+      const orderData = stripUndefined(rawOrderData);
 
       // Store in Firestore
       await setDoc(doc(db, 'orders', orderId), orderData);
@@ -599,61 +784,127 @@ export const Cart: React.FC<CartProps> = ({
                 <div className="divide-y divide-slate-800">
                   {cart.map((item) => {
                     const price = getItemUnitPrice(item);
+                    const lineTotal = getItemLineSubtotal(item);
                     const itemKey = item.id || `${item.productId || item.product.id}_${item.selectedVariantId || ''}`;
                     const targetId = item.id || item.productId || item.product.id;
+                    const isWeddingCard = item.itemType === 'wedding_card';
+                    const stepSize = isWeddingCard && !item.isDigital ? 25 : 1;
+                    const minQty = item.minOrderQuantity || 1;
 
                     return (
-                      <div key={itemKey} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 first:pt-0 last:pb-0">
-                        <div className="flex items-center space-x-4">
-                          <img 
-                            src={item.product.image} 
-                            alt={item.product.title} 
-                            className="h-16 w-16 rounded-xl object-cover border border-slate-800" 
-                            referrerPolicy="no-referrer"
-                          />
-                          <div>
-                            <h4 className="text-sm font-bold text-white line-clamp-1">{item.product.title}</h4>
-                            <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                              <span className="text-xxs text-slate-500">{item.product.category}</span>
-                              {item.selectedVariantName && (
-                                <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-xxs font-semibold">
-                                  Size: {item.selectedVariantName}
-                                </span>
-                              )}
+                      <div key={itemKey} className="py-4 flex flex-col gap-3 first:pt-0 last:pb-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="flex items-center space-x-4">
+                            <img 
+                              src={item.product.image} 
+                              alt={item.product.title} 
+                              className="h-16 w-16 rounded-xl object-cover border border-slate-800 shrink-0" 
+                              referrerPolicy="no-referrer"
+                            />
+                            <div>
+                              <h4 className="text-sm font-bold text-white line-clamp-1">{item.product.title}</h4>
+                              <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                <span className="text-xxs text-slate-500">{item.product.category}</span>
+                                {item.designCode && (
+                                  <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-neutral-300 font-mono text-xxs">
+                                    Code: #{item.designCode}
+                                  </span>
+                                )}
+                                {item.selectedVariantName && (
+                                  <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-xxs font-semibold">
+                                    {isWeddingCard ? item.selectedVariantName : `Size: ${item.selectedVariantName}`}
+                                  </span>
+                                )}
+                                {item.isDigital && (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xxs font-semibold">
+                                    {item.digitalType || 'Digital Invitation'}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-amber-500 font-bold mt-1">
+                                ₹{price.toLocaleString('en-IN')} {isWeddingCard && !item.isDigital ? '/ card' : ''}
+                                {isWeddingCard && ((item.printingCharge || 0) > 0 || (item.customizationCharge || 0) > 0) && (
+                                  <span className="text-slate-400 font-normal ml-2">
+                                    (+ ₹{(item.printingCharge || 0).toLocaleString('en-IN')} Print, + ₹{(item.customizationCharge || 0).toLocaleString('en-IN')} Custom)
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                            <p className="text-xs text-amber-500 font-bold mt-1">₹{price.toLocaleString('en-IN')}</p>
+                          </div>
+
+                          {/* Quantity triggers */}
+                          <div className="flex items-center justify-between sm:justify-end gap-6">
+                            {item.isDigital ? (
+                              <span className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xxs font-mono text-emerald-400 font-semibold">
+                                Digital (Qty: 1)
+                              </span>
+                            ) : (
+                              <div className="flex items-center border border-slate-800 rounded-lg p-1 bg-slate-950">
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateQuantity(targetId, Math.max(minQty, item.quantity - stepSize), item.selectedVariantId)}
+                                  className="p-1 text-slate-400 hover:text-white"
+                                  title={isWeddingCard ? `Decrease by ${stepSize} (Min: ${minQty})` : 'Decrease quantity'}
+                                >
+                                  <Minus className="h-3.5 w-3.5" />
+                                </button>
+                                <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateQuantity(targetId, item.quantity + stepSize, item.selectedVariantId)}
+                                  className="p-1 text-slate-400 hover:text-white"
+                                  title={isWeddingCard ? `Increase by ${stepSize}` : 'Increase quantity'}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )}
+
+                            <p className="text-sm font-bold text-white w-24 text-right">
+                              ₹{lineTotal.toLocaleString('en-IN')}
+                            </p>
+
+                            <button
+                              type="button"
+                              onClick={() => onRemoveFromCart(targetId, item.selectedVariantId)}
+                              className="p-2 text-slate-500 hover:text-rose-500 transition-colors"
+                            >
+                              <Trash2 className="h-4.5 w-4.5" />
+                            </button>
                           </div>
                         </div>
 
-                        {/* Quantity triggers */}
-                        <div className="flex items-center justify-between sm:justify-end gap-6">
-                          <div className="flex items-center border border-slate-800 rounded-lg p-1 bg-slate-950">
-                            <button
-                              onClick={() => onUpdateQuantity(targetId, Math.max(1, item.quantity - 1), item.selectedVariantId)}
-                              className="p-1 text-slate-400 hover:text-white"
-                            >
-                              <Minus className="h-3.5 w-3.5" />
-                            </button>
-                            <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
-                            <button
-                              onClick={() => onUpdateQuantity(targetId, item.quantity + 1, item.selectedVariantId)}
-                              className="p-1 text-slate-400 hover:text-white"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </button>
+                        {/* Wedding Card Customization Snapshot */}
+                        {isWeddingCard && item.weddingCardCustomization && (
+                          <div className="bg-slate-950/80 border border-amber-500/20 rounded-xl p-3 text-xs text-slate-300 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                            <div>
+                              <span className="text-[10px] font-mono uppercase text-amber-400 block">Couple</span>
+                              <span className="font-semibold text-white">
+                                {item.weddingCardCustomization.groomName} &amp; {item.weddingCardCustomization.brideName}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase text-amber-400 block">Event Date</span>
+                              <span>
+                                {item.weddingCardCustomization.weddingDate}
+                                {item.weddingCardCustomization.weddingTime ? ` • ${item.weddingCardCustomization.weddingTime}` : ''}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase text-amber-400 block">Venue</span>
+                              <span className="line-clamp-1">{item.weddingCardCustomization.venueName}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase text-amber-400 block">Print Language &amp; Refs</span>
+                              <span>
+                                {item.weddingCardCustomization.language}
+                                {item.weddingCardCustomization.referenceFiles?.length
+                                  ? ` • ${item.weddingCardCustomization.referenceFiles.length} file(s)`
+                                  : ''}
+                              </span>
+                            </div>
                           </div>
-                          
-                          <p className="text-sm font-bold text-white w-20 text-right">
-                            ₹{(price * item.quantity).toLocaleString('en-IN')}
-                          </p>
-
-                          <button
-                            onClick={() => onRemoveFromCart(targetId, item.selectedVariantId)}
-                            className="p-2 text-slate-500 hover:text-rose-500 transition-colors"
-                          >
-                            <Trash2 className="h-4.5 w-4.5" />
-                          </button>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
@@ -864,6 +1115,18 @@ export const Cart: React.FC<CartProps> = ({
                     <span>Subtotal:</span>
                     <span className="text-white font-medium">₹{subtotal.toLocaleString('en-IN')}</span>
                   </div>
+                  {totalPrintingCharges > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">• Includes Printing Charges:</span>
+                      <span className="text-slate-300">₹{totalPrintingCharges.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {totalCustomizationCharges > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">• Includes Customization Charges:</span>
+                      <span className="text-slate-300">₹{totalCustomizationCharges.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                   {gst > 0 && (
                     <div className="flex justify-between">
                       <span>GST Tax (Separately calculated):</span>

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { PackageItem, PackageCategory } from '../types';
 import { ImageField } from './ImageField';
-import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { getImageForSlugOrCategory } from '../assets/studioAssets';
+import { uploadBase64ToStorage } from '../utils/imageUploader';
+import { resolveMediaUrl, applyImageFallback, isEphemeralMediaUrl } from '../utils/mediaResolver';
 import {
   Plus,
   Edit3,
@@ -14,6 +16,7 @@ import {
   Loader2,
   X,
   CheckCircle2,
+  AlertCircle,
   Package
 } from 'lucide-react';
 
@@ -40,6 +43,7 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
   const [showModal, setShowModal] = useState(false);
   const [editingPkg, setEditingPkg] = useState<PackageItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState('');
@@ -77,11 +81,12 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
   }, []);
 
   const openModal = (pkg?: PackageItem) => {
+    setModalError(null);
     if (pkg) {
       setEditingPkg(pkg);
       setName(pkg.name || '');
       setCategory((pkg.category as PackageCategory) || 'Wedding');
-      setPrice(Number(pkg.price) || 0);
+      setPrice(Number.isFinite(Number(pkg.price)) ? Number(pkg.price) : 0);
       setImage(pkg.image || '');
       setDuration(pkg.duration || '');
       setEditedPhotosCount(pkg.editedPhotosCount || '');
@@ -92,13 +97,13 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
       setIncludedServicesText(Array.isArray(pkg.includedServices) ? pkg.includedServices.join('\n') : '');
       setIsPublished(pkg.isPublished !== false);
       setIsFeatured(!!pkg.isFeatured);
-      setOrder(pkg.order ?? packages.length + 1);
+      setOrder(Number.isFinite(Number(pkg.order)) ? Number(pkg.order) : packages.length + 1);
     } else {
       setEditingPkg(null);
       setName('');
       setCategory('Wedding');
       setPrice(15000);
-      setImage(STUDIO_IMAGES.heroWedding);
+      setImage(getImageForSlugOrCategory('Wedding'));
       setDuration('1 Full Day (8 Hours)');
       setEditedPhotosCount('250+ Edited Photos');
       setReelsCount('2 Cinematic Reels');
@@ -115,35 +120,103 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
 
   const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || price < 0) return;
+    if (saving) return;
+
+    setModalError(null);
+    setStatusNotice(null);
+
+    if (!auth.currentUser) {
+      setModalError('Your admin session expired. Please sign in again before saving packages.');
+      return;
+    }
+
+    const trimmedName = name.trim();
+    const trimmedCategory = (category || 'Wedding').trim();
+    const numericPrice = Number(price);
+    const trimmedDesc = description.trim();
+
+    if (!trimmedName) {
+      setModalError('Package Name is required.');
+      return;
+    }
+    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
+      setModalError('Package Price must be a valid number greater than or equal to 0.');
+      return;
+    }
+    if (!trimmedDesc) {
+      setModalError('Package Overview Description is required.');
+      return;
+    }
+
+    // Prevent accidental duplicate record when creating a brand new package
+    if (!editingPkg) {
+      const duplicate = packages.find(
+        (p) =>
+          p.name.trim().toLowerCase() === trimmedName.toLowerCase() &&
+          (p.category || '').trim().toLowerCase() === trimmedCategory.toLowerCase()
+      );
+      if (duplicate) {
+        setModalError(
+          `A package named "${duplicate.name}" already exists in "${duplicate.category}". Edit the existing package instead or use a distinct name.`
+        );
+        return;
+      }
+    }
 
     setSaving(true);
-    setStatusNotice(null);
     try {
-      const pkgId = editingPkg ? editingPkg.id : `pkg_${Date.now()}`;
+      const rawId = editingPkg ? editingPkg.id : `pkg_${Date.now()}`;
+      const pkgId = /^[a-zA-Z0-9_-]+$/.test(rawId)
+        ? rawId.slice(0, 128)
+        : `pkg_${rawId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)}`;
       const now = new Date().toISOString();
+
+      // Ensure cover image is never a huge base64 string or blob URL
+      let resolvedImage = (image || '').trim();
+      if (resolvedImage.startsWith('blob:') || resolvedImage.startsWith('file:')) {
+        throw new Error('Selected image uses a temporary browser link. Please re-upload the image first.');
+      }
+      if (resolvedImage.startsWith('data:')) {
+        resolvedImage = await uploadBase64ToStorage(resolvedImage, 'packages');
+      }
+      if (!resolvedImage) {
+        resolvedImage = getImageForSlugOrCategory(trimmedCategory);
+      }
+      if (resolvedImage.length > 2048) {
+        throw new Error('Package image URL exceeds the 2048-character limit. Please upload the image file cleanly.');
+      }
+
       const includedList = includedServicesText
         .split('\n')
         .map((line) => line.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .slice(0, 30);
+
+      const safeCreatedAt =
+        typeof editingPkg?.createdAt === 'string' && editingPkg.createdAt.trim()
+          ? editingPkg.createdAt.trim().slice(0, 64)
+          : now;
+
+      const numericOrder = Number(order);
+      const safeOrder = Number.isFinite(numericOrder) ? Math.max(1, Math.round(numericOrder)) : 1;
 
       const payload: PackageItem = {
         id: pkgId,
-        name: name.trim(),
-        category,
-        price: Number(price) || 0,
-        image: image || STUDIO_IMAGES.heroWedding,
-        duration: duration.trim(),
-        editedPhotosCount: editedPhotosCount.trim(),
-        reelsCount: reelsCount.trim(),
-        albumDetails: albumDetails.trim(),
-        frameDetails: frameDetails.trim(),
-        description: description.trim(),
+        name: trimmedName.slice(0, 200),
+        category: trimmedCategory.slice(0, 100) as PackageCategory,
+        price: numericPrice,
+        image: resolvedImage,
+        duration: duration.trim().slice(0, 160),
+        editedPhotosCount: editedPhotosCount.trim().slice(0, 160),
+        reelsCount: reelsCount.trim().slice(0, 160),
+        albumDetails: albumDetails.trim().slice(0, 500),
+        frameDetails: frameDetails.trim().slice(0, 500),
+        description: trimmedDesc.slice(0, 5000),
         includedServices: includedList,
-        isPublished,
-        isFeatured,
-        order: Number(order) || 1,
-        createdAt: editingPkg?.createdAt || now,
+        isPublished: Boolean(isPublished),
+        isFeatured: Boolean(isFeatured),
+        order: safeOrder,
+        createdAt: safeCreatedAt,
         updatedAt: now
       };
 
@@ -152,9 +225,15 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
       setEditingPkg(null);
       setStatusNotice({ type: 'success', text: `Package "${payload.name}" saved successfully.` });
       await fetchPackages();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving package:', err);
-      setStatusNotice({ type: 'error', text: 'Failed to save package. Check permissions or fields.' });
+      const code = err?.code ? ` (${err.code})` : '';
+      const detail =
+        err?.code === 'permission-denied'
+          ? 'Firestore permission denied. Verify you are signed in as an Admin and all package fields are valid.'
+          : err?.message || 'Unexpected error while saving package.';
+      setModalError(`Failed to save package${code}: ${detail}`);
+      setStatusNotice({ type: 'error', text: `Failed to save package${code}: ${detail}` });
     } finally {
       setSaving(false);
     }
@@ -169,8 +248,12 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
       setPackages((prev) =>
         prev.map((item) => (item.id === pkg.id ? { ...item, isPublished: pkg.isPublished === false } : item))
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error('Toggle publish error:', err);
+      setStatusNotice({
+        type: 'error',
+        text: `Failed to update publish status: ${err?.message || 'Permission denied.'}`
+      });
     }
   };
 
@@ -284,18 +367,24 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
               <div>
                 <div className="relative aspect-[16/10] bg-[#111111] overflow-hidden">
                   <img
-                    src={pkg.image || STUDIO_IMAGES.heroWedding}
+                    src={resolveMediaUrl(pkg.image, getImageForSlugOrCategory(pkg.category))}
                     alt={pkg.name}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
+                    onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(pkg.category))}
                   />
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                  <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
                     <span className="px-2.5 py-1 bg-[#111111]/85 backdrop-blur-sm border border-[#D4AF37]/40 text-[#D4AF37] font-mono text-[10px] uppercase font-bold rounded">
                       {pkg.category}
                     </span>
                     {pkg.isFeatured && (
                       <span className="px-2 py-1 bg-[#D4AF37] text-[#111111] font-mono text-[10px] uppercase font-bold rounded flex items-center gap-1">
                         <Star className="h-3 w-3 fill-current" /> Featured
+                      </span>
+                    )}
+                    {isEphemeralMediaUrl(pkg.image) && (
+                      <span className="px-2 py-1 bg-amber-500/90 text-slate-950 font-mono text-[10px] uppercase font-bold rounded">
+                        Re-upload image
                       </span>
                     )}
                   </div>
@@ -371,6 +460,13 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
             <h3 className="text-base font-bold text-[#D4AF37] uppercase tracking-wider font-mono mb-6">
               {editingPkg ? `Edit Package: ${editingPkg.name}` : 'Create New Photography Package'}
             </h3>
+
+            {modalError && (
+              <div className="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
+                <span>{modalError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleSavePackage} className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
               <div className="space-y-4">

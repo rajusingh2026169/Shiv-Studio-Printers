@@ -221,79 +221,117 @@ export const TrackOrder: React.FC = () => {
               <span>Active Print Orders Tracking</span>
             </h3>
 
-            {orderResults.map((order) => (
-              <div key={order.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
-                  <div>
-                    <span className="text-xxs text-slate-500 font-mono uppercase">ORDER ID:</span>
-                    <h4 className="font-bold text-white text-base">#{order.id}</h4>
-                    <p className="text-xxs text-slate-400 mt-0.5">Billed to {order.customerName}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/25 text-xxs font-bold uppercase rounded font-mono">
-                      {order.status}
-                    </span>
-                    <button
-                      onClick={() => { setSelectedDoc(order); setSelectedType('order'); }}
-                      className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-850 text-slate-300 hover:text-white"
-                      title="View GST Invoice"
-                    >
-                      <Eye className="h-4.5 w-4.5" />
-                    </button>
-                  </div>
-                </div>
+            {orderResults.map((order) => {
+              const isWeddingCardOrder = Boolean(
+                order.hasWeddingCards || order.items.some((i) => i.itemType === 'wedding_card')
+              );
 
-                {/* Progress Tracker Horizontal Step */}
-                <div className="space-y-3 font-sans">
-                  <p className="text-xxs text-slate-500 font-bold uppercase tracking-wider">Manufacturing Queue status</p>
-                  
-                  {/* Step Indicators */}
-                  <div className="flex justify-between items-center text-center relative pt-4">
-                    {/* Background Progress Bar Line */}
-                    <div className="absolute top-7 left-6 right-6 h-1 bg-slate-800 z-0"></div>
-                    <div 
-                      className="absolute top-7 left-6 h-1 bg-amber-500 z-0 transition-all duration-300"
-                      style={{ width: `${(getStepIndex(order.status) / (orderSteps.length - 1)) * 100}%` }}
-                    ></div>
+              return (
+                <div key={order.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xxs text-slate-500 font-mono uppercase">ORDER ID:</span>
+                      <h4 className="font-bold text-white text-base">#{order.id}</h4>
+                      <p className="text-xxs text-slate-400 mt-0.5">Billed to {order.customerName}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isWeddingCardOrder && (
+                        <span className="px-3 py-1 bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/30 text-xxs font-bold uppercase rounded font-mono">
+                          Proof: {order.proofStatus || 'Awaiting Proof'}
+                        </span>
+                      )}
+                      <span className="px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/25 text-xxs font-bold uppercase rounded font-mono">
+                        {order.status}
+                      </span>
+                      <button
+                        onClick={() => { setSelectedDoc(order); setSelectedType('order'); }}
+                        className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-850 text-slate-300 hover:text-white"
+                        title="View GST Invoice"
+                      >
+                        <Eye className="h-4.5 w-4.5" />
+                      </button>
+                    </div>
+                  </div>
 
-                    {orderSteps.map((step, idx) => {
-                      const isActive = getStepIndex(order.status) >= idx;
-                      return (
-                        <div key={step} className="relative z-10 flex flex-col items-center flex-1">
-                          <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center text-xxs font-bold ${
-                            isActive 
-                              ? 'bg-amber-500 border-amber-400 text-slate-950' 
-                              : 'bg-slate-950 border-slate-800 text-slate-500'
-                          }`}>
-                            {idx + 1}
+                  {/* Progress Tracker Horizontal Step */}
+                  <div className="space-y-3 font-sans">
+                    <p className="text-xxs text-slate-500 font-bold uppercase tracking-wider">Manufacturing Queue status</p>
+
+                    {/* Step Indicators */}
+                    <div className="flex justify-between items-center text-center relative pt-4">
+                      {/* Background Progress Bar Line */}
+                      <div className="absolute top-7 left-6 right-6 h-1 bg-slate-800 z-0"></div>
+                      <div
+                        className="absolute top-7 left-6 h-1 bg-amber-500 z-0 transition-all duration-300"
+                        style={{ width: `${(Math.max(0, getStepIndex(order.status)) / (orderSteps.length - 1)) * 100}%` }}
+                      ></div>
+
+                      {orderSteps.map((step, idx) => {
+                        const isActive = getStepIndex(order.status) >= idx;
+                        return (
+                          <div key={step} className="relative z-10 flex flex-col items-center flex-1">
+                            <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center text-xxs font-bold ${
+                              isActive
+                                ? 'bg-amber-500 border-amber-400 text-slate-950'
+                                : 'bg-slate-950 border-slate-800 text-slate-500'
+                            }`}>
+                              {idx + 1}
+                            </div>
+                            <span className={`text-xxs mt-2 font-semibold block ${isActive ? 'text-white' : 'text-slate-600'}`}>
+                              {step}
+                            </span>
                           </div>
-                          <span className={`text-xxs mt-2 font-semibold block ${isActive ? 'text-white' : 'text-slate-600'}`}>
-                            {step}
-                          </span>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
 
-                {/* Order Deliverables summary */}
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-850/60 grid grid-cols-2 gap-4 text-xs font-sans text-slate-400">
-                  <div>
-                    <p className="text-slate-500 font-semibold uppercase tracking-wider font-mono">Items In Bundle</p>
-                    <ul className="list-disc pl-4 mt-2 text-slate-300 space-y-1">
-                      {order.items.map((item, idx) => (
-                        <li key={idx} className="line-clamp-1">{item.productTitle} (x{item.quantity})</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 font-semibold uppercase tracking-wider font-mono">Logistics Information</p>
-                    <p className="text-slate-300 mt-2">Dispatched to: {order.address}</p>
-                    <p className="text-amber-500 font-bold mt-1">Paid Amount: ₹{order.total.toLocaleString('en-IN')}</p>
+                  {/* Wedding Card Proof Review Callout */}
+                  {isWeddingCardOrder && (
+                    <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="space-y-1">
+                        <p className="font-semibold text-[#D4AF37]">
+                          Wedding Invitation Proof Status: {order.proofStatus || 'Awaiting Proof'}
+                        </p>
+                        {order.weddingCardCustomization && (
+                          <p className="text-slate-300 text-xxs">
+                            {order.weddingCardCustomization.groomName} &amp; {order.weddingCardCustomization.brideName} • {order.weddingCardCustomization.weddingDate} ({order.weddingCardCustomization.language})
+                          </p>
+                        )}
+                      </div>
+                      <Link
+                        to="/customer/dashboard"
+                        className="px-4 py-2 bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] font-bold rounded-xl text-xxs uppercase tracking-wider shrink-0 text-center"
+                      >
+                        {order.digitalDeliverableUrl
+                          ? 'Review Proof / Download Invite'
+                          : 'Review & Approve Proof'}
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* Order Deliverables summary */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-850/60 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans text-slate-400">
+                    <div>
+                      <p className="text-slate-500 font-semibold uppercase tracking-wider font-mono">Items In Bundle</p>
+                      <ul className="list-disc pl-4 mt-2 text-slate-300 space-y-1">
+                        {order.items.map((item, idx) => (
+                          <li key={idx} className="line-clamp-1">
+                            {item.productTitle} (x{item.quantity})
+                            {item.selectedColor || item.selectedFinish ? ` — ${[item.selectedColor, item.selectedFinish].filter(Boolean).join(', ')}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 font-semibold uppercase tracking-wider font-mono">Logistics Information</p>
+                      <p className="text-slate-300 mt-2">Dispatched to: {order.address}</p>
+                      <p className="text-amber-500 font-bold mt-1">Paid Amount: ₹{order.total.toLocaleString('en-IN')}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

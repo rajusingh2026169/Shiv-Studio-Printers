@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 import { WHY_CHOOSE_US_ITEMS } from '../data/studioCatalog';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
@@ -90,10 +91,11 @@ export const About: React.FC = () => {
           <div className="lg:col-span-6">
             <div className="rounded-2xl overflow-hidden border border-white/10 bg-[#1A1A1A] aspect-[4/3]">
               <img
-                src={settings.aboutImageUrl || STUDIO_IMAGES.studioPortrait}
+                src={resolveMediaUrl(settings.aboutImageUrl, STUDIO_IMAGES.studioPortrait)}
                 alt="SHIV STUDIO creative photography and editing studio in Khaga"
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
+                onError={(e) => applyImageFallback(e, STUDIO_IMAGES.studioPortrait)}
               />
             </div>
           </div>
@@ -152,10 +154,11 @@ export const About: React.FC = () => {
                 <div className="aspect-[4/3] bg-[#111111]">
                   {member.image ? (
                     <img
-                      src={member.image}
+                      src={resolveMediaUrl(member.image, STUDIO_IMAGES.studioPortrait)}
                       alt={member.name}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
+                      onError={(e) => applyImageFallback(e, STUDIO_IMAGES.studioPortrait)}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-neutral-600">

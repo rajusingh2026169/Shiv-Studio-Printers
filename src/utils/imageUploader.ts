@@ -1,6 +1,6 @@
 import { storage, db } from '../firebase';
-import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
-import { collection, doc, setDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, setDoc } from 'firebase/firestore';
 
 /**
  * Converts a Data URL (base64) to a Blob object.
@@ -8,7 +8,7 @@ import { collection, doc, setDoc } from 'firebase/firestore';
 function dataURLtoBlob(dataurl: string): Blob {
   const arr = dataurl.split(',');
   const mimeMatch = arr[0].match(/:(.*?);/);
-  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const mime = mimeMatch ? mimeMatch[1] : 'image/webp';
   const bstr = atob(arr[1] || '');
   let n = bstr.length;
   const u8arr = new Uint8Array(n);
@@ -19,9 +19,9 @@ function dataURLtoBlob(dataurl: string): Blob {
 }
 
 /**
- * Ensures that an image URL string is a valid HTTPS storage URL.
- * If the input is a Base64 string (data:image/...), it converts it to a Blob and uploads to Firebase Storage
- * and returns the generated download URL. Never returns a heavy base64 string or crashes on retry limit.
+ * Ensures that an image string is uploaded to permanent Firebase Storage
+ * and returns the generated HTTPS download URL.
+ * Never returns ephemeral localhost paths or giant data URIs that fail Firestore rules.
  */
 export async function uploadBase64ToStorage(
   base64String: string,
@@ -31,74 +31,47 @@ export async function uploadBase64ToStorage(
     return '';
   }
 
-  // If it's already an http/https URL or relative uploads URL, return as is
+  // Already a hosted HTTP/HTTPS or static asset path
   if (!base64String.startsWith('data:')) {
     return base64String;
   }
 
-  // 1. Try ultra-fast server /api/upload-base64 endpoint
+  const cleanFolder = folder.replace(/^\/|\/$/g, '') || 'products';
+  const filename = `img_${Date.now()}_${Math.floor(Math.random() * 10000)}.webp`;
+  const filePath = `images/${cleanFolder}/${filename}`;
+  const storageRef = ref(storage, filePath);
+
+  const blob = dataURLtoBlob(base64String);
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Firebase Storage upload timed out after 30s')), 30000)
+  );
+
+  await Promise.race([
+    uploadBytes(storageRef, blob, {
+      contentType: blob.type || 'image/webp',
+      cacheControl: 'public,max-age=31536000'
+    }),
+    timeoutPromise
+  ]);
+
+  const downloadUrl = await getDownloadURL(storageRef);
+
+  // Record uploaded image metadata in Firestore (best effort)
   try {
-    const response = await fetch('/api/upload-base64', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dataUrl: base64String,
-        fileName: `${folder}_${Date.now()}.webp`
-      })
+    const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    await setDoc(doc(db, 'uploaded_images', imageId), {
+      url: downloadUrl,
+      path: filePath,
+      category: cleanFolder,
+      uploadedAt: new Date().toISOString(),
+      compressed: true
     });
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.url) {
-        return data.url;
-      }
-    }
-  } catch (apiErr) {
-    console.warn('API upload-base64 fallback:', apiErr);
+  } catch (e) {
+    console.warn('Could not record uploaded_images doc:', e);
   }
 
-  try {
-    const cleanFolder = folder.replace(/^\/|\/$/g, '');
-    const filename = `img_${Date.now()}_${Math.floor(Math.random() * 10000)}.webp`;
-    const filePath = `${cleanFolder}/${filename}`;
-    const storageRef = ref(storage, filePath);
-
-    // Convert data URL to Blob for fast binary uploadBytes
-    const blob = dataURLtoBlob(base64String);
-
-    // 20-second timeout race to avoid hanging indefinitely
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Storage upload timeout')), 20000)
-    );
-
-    await Promise.race([
-      uploadBytes(storageRef, blob, {
-        contentType: blob.type || 'image/webp',
-        cacheControl: 'public,max-age=31536000'
-      }),
-      timeoutPromise
-    ]);
-
-    const downloadUrl = await getDownloadURL(storageRef);
-
-    // Record uploaded image in Firestore metadata collection
-    try {
-      const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      await setDoc(doc(db, 'uploaded_images', imageId), {
-        url: downloadUrl,
-        path: filePath,
-        category: folder,
-        uploadedAt: new Date().toISOString()
-      });
-    } catch (e) {
-      console.warn('Could not record uploaded_images doc:', e);
-    }
-
-    return downloadUrl;
-  } catch (err: any) {
-    console.warn('⚠️ Firebase Storage base64 upload notice (preserving original uploaded image):', err?.message || err);
-    // CRITICAL: Always return original base64 string on upload error/timeout, NEVER return a demo or sample image!
-    return base64String;
-  }
+  return downloadUrl;
 }
 
 /**
@@ -109,7 +82,7 @@ export async function ensureAllStorageUrls(
   folder: string = 'products'
 ): Promise<string[]> {
   if (!Array.isArray(images) || images.length === 0) return [];
-  
+
   const uploadPromises = images.map(async (img) => {
     if (!img) return '';
     if (img.startsWith('data:')) {

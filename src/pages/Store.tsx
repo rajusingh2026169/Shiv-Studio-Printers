@@ -9,6 +9,8 @@ import { VideoPlayer } from '../components/VideoPlayer';
 import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
 import { SEOHead } from '../components/SEOHead';
 import { useAuth } from '../context/AuthContext';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 import { Star, Search, Filter, ShoppingCart, Heart, Eye, CheckCircle, Flame, Film, Image as ImageIcon, AlertCircle, Layers } from 'lucide-react';
 
 interface StoreProps {
@@ -238,11 +240,12 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                 <div>
                   <div className="relative aspect-square rounded-xl overflow-hidden bg-slate-950 cursor-pointer" onClick={() => handleSelectProduct(product)}>
                     <img 
-                      src={product.image || product.thumbnailUrl} 
+                      src={resolveMediaUrl(product.image || product.thumbnailUrl, STUDIO_IMAGES.luxuryAlbumFrame)} 
                       alt={product.title} 
                       className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
                       referrerPolicy="no-referrer"
                       loading="lazy"
+                      onError={(e) => applyImageFallback(e, STUDIO_IMAGES.luxuryAlbumFrame)}
                     />
                     {product.discountPrice && (
                       <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white font-extrabold text-xxs px-2.5 py-1 rounded-md">
@@ -359,11 +362,12 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                   {/* Main cover image */}
                   <div className="aspect-square rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
                     <img 
-                      src={(selectedVariant?.image) || selectedProduct.image || selectedProduct.thumbnailUrl} 
+                      src={resolveMediaUrl(selectedVariant?.image || selectedProduct.image || selectedProduct.thumbnailUrl, STUDIO_IMAGES.luxuryAlbumFrame)} 
                       alt={selectedProduct.title} 
                       className="w-full h-full object-cover" 
                       referrerPolicy="no-referrer"
                       loading="lazy"
+                      onError={(e) => applyImageFallback(e, STUDIO_IMAGES.luxuryAlbumFrame)}
                     />
                   </div>
 
@@ -378,11 +382,12 @@ export const Store: React.FC<StoreProps> = ({ onAddToCart, onToggleWishlist, wis
                         {selectedProduct.images.map((img, i) => (
                           <div key={i} className="aspect-square rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
                             <img 
-                              src={img} 
+                              src={resolveMediaUrl(img, STUDIO_IMAGES.luxuryAlbumFrame)} 
                               alt={`Product view ${i + 1}`} 
                               className="w-full h-full object-cover" 
                               referrerPolicy="no-referrer"
                               loading="lazy"
+                              onError={(e) => applyImageFallback(e, STUDIO_IMAGES.luxuryAlbumFrame)}
                             />
                           </div>
                         ))}
