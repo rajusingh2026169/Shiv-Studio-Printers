@@ -1,6 +1,7 @@
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
+import { checkFirebaseStorageBucket, checkExpressUploadServer } from './storageAvailability';
 
 /**
  * Converts a Data URL (base64) to a Blob object.
@@ -20,8 +21,8 @@ function dataURLtoBlob(dataurl: string): Blob {
 
 /**
  * Ensures that an image string is uploaded to permanent Firebase Storage
- * and returns the generated HTTPS download URL.
- * Never returns ephemeral localhost paths or giant data URIs that fail Firestore rules.
+ * (or Express /api/upload-base64 during local/preview development if Storage bucket is not initialized yet).
+ * Never returns giant data URIs that fail Firestore rules.
  */
 export async function uploadBase64ToStorage(
   base64String: string,
@@ -39,39 +40,64 @@ export async function uploadBase64ToStorage(
   const cleanFolder = folder.replace(/^\/|\/$/g, '') || 'products';
   const filename = `img_${Date.now()}_${Math.floor(Math.random() * 10000)}.webp`;
   const filePath = `images/${cleanFolder}/${filename}`;
-  const storageRef = ref(storage, filePath);
 
-  const blob = dataURLtoBlob(base64String);
+  const bucketCheck = await checkFirebaseStorageBucket();
+  if (bucketCheck.available) {
+    try {
+      const storageRef = ref(storage, filePath);
+      const blob = dataURLtoBlob(base64String);
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Firebase Storage upload timed out after 30s')), 30000)
-  );
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Firebase Storage upload timed out after 30s')), 30000)
+      );
 
-  await Promise.race([
-    uploadBytes(storageRef, blob, {
-      contentType: blob.type || 'image/webp',
-      cacheControl: 'public,max-age=31536000'
-    }),
-    timeoutPromise
-  ]);
+      await Promise.race([
+        uploadBytes(storageRef, blob, {
+          contentType: blob.type || 'image/webp',
+          cacheControl: 'public,max-age=31536000'
+        }),
+        timeoutPromise
+      ]);
 
-  const downloadUrl = await getDownloadURL(storageRef);
+      const downloadUrl = await getDownloadURL(storageRef);
 
-  // Record uploaded image metadata in Firestore (best effort)
-  try {
-    const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    await setDoc(doc(db, 'uploaded_images', imageId), {
-      url: downloadUrl,
-      path: filePath,
-      category: cleanFolder,
-      uploadedAt: new Date().toISOString(),
-      compressed: true
-    });
-  } catch (e) {
-    console.warn('Could not record uploaded_images doc:', e);
+      try {
+        const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        await setDoc(doc(db, 'uploaded_images', imageId), {
+          url: downloadUrl,
+          path: filePath,
+          category: cleanFolder,
+          uploadedAt: new Date().toISOString(),
+          compressed: true
+        });
+      } catch (e) {
+        console.warn('Could not record uploaded_images doc:', e);
+      }
+
+      return downloadUrl;
+    } catch (storageErr) {
+      console.warn('Storage base64 upload notice:', storageErr);
+    }
   }
 
-  return downloadUrl;
+  if (await checkExpressUploadServer()) {
+    const res = await fetch('/api/upload-base64', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl: base64String, fileName: filename })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.url) {
+        return data.url;
+      }
+    }
+  }
+
+  throw new Error(
+    bucketCheck.reason ||
+      'Cloud image upload failed. Please enable Firebase Storage in Firebase Console or paste an https:// image URL.'
+  );
 }
 
 /**

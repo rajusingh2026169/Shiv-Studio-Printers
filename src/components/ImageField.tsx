@@ -6,6 +6,11 @@ import { doc, setDoc } from 'firebase/firestore';
 import { Upload, Link2, CheckCircle2, AlertCircle, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
 import { isEphemeralMediaUrl, resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
+import {
+  checkFirebaseStorageBucket,
+  checkExpressUploadServer,
+  uploadFileViaExpressApi
+} from '../utils/storageAvailability';
 
 interface ImageFieldProps {
   value: string;
@@ -115,60 +120,63 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       console.log(`Diagnostic file generated: ${(testFile.size / 1024).toFixed(2)} KB`);
 
       const filePath = `diagnostics/${testFile.name}`;
-      const storageRef = ref(storage, filePath);
+      const bucketStatus = await checkFirebaseStorageBucket();
+      let downloadUrl = '';
 
-      const metadata = {
-        contentType: 'image/webp',
-        cacheControl: 'public,max-age=31536000',
-        customMetadata: {
-          testType: 'automated_diagnostic',
-          createdBy: 'AI_Studio_Diagnostic_Tool'
-        }
-      };
+      if (bucketStatus.available) {
+        const storageRef = ref(storage, filePath);
 
-      // Clean uploadBytesResumable implementation
-      const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
+        const metadata = {
+          contentType: 'image/webp',
+          cacheControl: 'public,max-age=31536000',
+          customMetadata: {
+            testType: 'automated_diagnostic',
+            createdBy: 'AI_Studio_Diagnostic_Tool'
+          }
+        };
 
-      // 1. 'state_changed' observer strictly tracks progress
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = snapshot.totalBytes > 0 
-          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) 
-          : 0;
-        console.log(`Progress ${progress}%`);
-        setUploadProgress(progress);
-      });
+        const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
+        uploadTask.on('state_changed', (snapshot) => {
+          const progress = snapshot.totalBytes > 0
+            ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+            : 0;
+          setUploadProgress(progress);
+        });
 
-      // 2. Task completion is handled strictly by the uploadTask promise
-      const snapshot = await uploadTask;
-
-      // 3. Explicitly call getDownloadURL() once and wait for it
-      const downloadUrl = await getDownloadURL(snapshot.ref);
+        const snapshot = await uploadTask;
+        downloadUrl = await getDownloadURL(snapshot.ref);
+      } else if (await checkExpressUploadServer()) {
+        setIsCompressing(false);
+        setUploadProgress(35);
+        downloadUrl = await uploadFileViaExpressApi(testFile, testFile.name, (pct) => {
+          setUploadProgress(pct);
+        });
+      } else {
+        throw new Error(bucketStatus.reason || 'Firebase Storage bucket is not available.');
+      }
 
       if (downloadUrl) {
-        console.log('Upload Finished');
-        console.log('Download URL Generated', downloadUrl);
-
-        try {
-          const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          await setDoc(doc(db, 'uploaded_images', imageId), {
-            url: downloadUrl,
-            path: filePath,
-            category: 'diagnostics',
-            uploadedAt: new Date().toISOString()
-          });
-          console.log('Firestore Saved');
-        } catch (dbErr) {
-          console.warn('Could not record diagnostic uploaded_images doc:', dbErr);
+        if (downloadUrl.startsWith('https://')) {
+          try {
+            const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            await setDoc(doc(db, 'uploaded_images', imageId), {
+              url: downloadUrl,
+              path: filePath,
+              category: 'diagnostics',
+              uploadedAt: new Date().toISOString()
+            });
+          } catch (dbErr) {
+            console.warn('Could not record diagnostic uploaded_images doc:', dbErr);
+          }
         }
 
         onChange(downloadUrl);
         setSuccess(true);
         setError(null);
-        console.log('Operation Complete');
       }
     } catch (err: any) {
-      console.error('Diagnostic creation/initialization failed:', err);
-      setError(`Diagnostic Setup Failed: ${err.message || err}`);
+      console.warn('Diagnostic upload notice:', err);
+      setError(`Diagnostic Failed: ${err.message || err}`);
     } finally {
       setUploadProgress(null);
       setIsCompressing(false);
@@ -219,42 +227,66 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       setUploadProgress(5);
 
       const filePath = getPath(compressedFile.name);
-      const storageRef = ref(storage, filePath);
+      const bucketStatus = await checkFirebaseStorageBucket();
+      let downloadUrl = '';
+      let cloudError: any = null;
 
-      const metadata = {
-        contentType: compressedFile.type || 'image/webp',
-        cacheControl: 'public,max-age=31536000',
-        customMetadata: {
-          uploadedBy: auth.currentUser.uid,
-          category: storagePath
+      if (bucketStatus.available) {
+        try {
+          const storageRef = ref(storage, filePath);
+
+          const metadata = {
+            contentType: compressedFile.type || 'image/webp',
+            cacheControl: 'public,max-age=31536000',
+            customMetadata: {
+              uploadedBy: auth.currentUser.uid,
+              category: storagePath
+            }
+          };
+
+          const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
+
+          uploadTask.on('state_changed', (snapshot) => {
+            const progress = snapshot.totalBytes > 0
+              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+              : 5;
+            setUploadProgress(progress);
+          });
+
+          const timeoutPromise = new Promise<never>((_, rej) =>
+            setTimeout(() => {
+              try {
+                uploadTask.cancel();
+              } catch {
+                // ignore
+              }
+              rej(new Error('Firebase Storage upload timed out after 45 seconds.'));
+            }, 45000)
+          );
+
+          const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+          downloadUrl = await getDownloadURL(snapshot.ref);
+        } catch (storageErr: any) {
+          cloudError = storageErr;
+          console.warn('Firebase Storage image upload notice:', storageErr?.message || storageErr);
         }
-      };
+      } else {
+        cloudError = new Error(bucketStatus.reason || 'Firebase Storage bucket not initialized.');
+      }
 
-      const uploadTask = uploadBytesResumable(storageRef, compressedFile, metadata);
+      // Fall back cleanly to Express /api/upload when running on localhost or Cloud Run preview server
+      if (!downloadUrl && (await checkExpressUploadServer())) {
+        downloadUrl = await uploadFileViaExpressApi(compressedFile, compressedFile.name, (pct) => {
+          setUploadProgress(pct);
+        });
+      }
 
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = snapshot.totalBytes > 0
-          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-          : 5;
-        setUploadProgress(progress);
-      });
+      if (!downloadUrl) {
+        throw cloudError || new Error('Firebase Storage did not return a download URL.');
+      }
 
-      const timeoutPromise = new Promise<never>((_, rej) =>
-        setTimeout(() => {
-          try {
-            uploadTask.cancel();
-          } catch {
-            // ignore
-          }
-          rej(new Error('Firebase Storage upload timed out after 45 seconds.'));
-        }, 45000)
-      );
-
-      const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-      const downloadUrl = await getDownloadURL(snapshot.ref);
-
-      if (!downloadUrl || !downloadUrl.startsWith('https://')) {
-        throw new Error('Firebase Storage did not return a permanent HTTPS URL.');
+      if (!downloadUrl.startsWith('https://') && !downloadUrl.startsWith('/uploads/')) {
+        throw new Error('Upload did not return a valid image URL.');
       }
 
       if (downloadUrl.length > 2048) {
@@ -263,19 +295,21 @@ export const ImageField: React.FC<ImageFieldProps> = ({
 
       setUploadProgress(100);
 
-      // Log metadata record in Firestore
-      try {
-        const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-        await setDoc(doc(db, 'uploaded_images', imageId), {
-          url: downloadUrl,
-          path: filePath,
-          category: storagePath,
-          uploadedAt: new Date().toISOString(),
-          originalName: file.name,
-          compressed: true
-        });
-      } catch (dbErr) {
-        console.warn('Could not record uploaded_images doc:', dbErr);
+      // Log metadata record in Firestore (when using cloud HTTPS)
+      if (downloadUrl.startsWith('https://')) {
+        try {
+          const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          await setDoc(doc(db, 'uploaded_images', imageId), {
+            url: downloadUrl,
+            path: filePath,
+            category: storagePath,
+            uploadedAt: new Date().toISOString(),
+            originalName: file.name,
+            compressed: true
+          });
+        } catch (dbErr) {
+          console.warn('Could not record uploaded_images doc:', dbErr);
+        }
       }
 
       // Sync doc if explicitly bound
@@ -292,7 +326,7 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       setSuccess(true);
       setError(null);
     } catch (err: any) {
-      console.error('❌ Image upload failure:', err);
+      console.warn('Image upload notice:', err?.message || err);
       setError(mapStorageUploadError(err));
     } finally {
       setTimeout(() => {

@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { collection, addDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { db, storage } from '../firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db } from '../firebase';
 
 import { CartItem, ProductItem, Order, CouponValidationResult, UploadedFileRecord, WeddingCardItem, WeddingCardCustomization } from '../types';
 import { validateCoupon, redeemCoupon, findAutoApplyCoupon, CartItemForValidation } from '../utils/couponEngine';
@@ -395,7 +394,7 @@ export const Cart: React.FC<CartProps> = ({
         return [...prev, record];
       });
     } catch (uploadErr: any) {
-      console.error(`Firebase Storage upload failed for ${item.name}:`, uploadErr);
+      console.warn(`Upload notice for ${item.name}:`, uploadErr?.message || uploadErr);
       processingIdsRef.current.delete(item.id);
       const errorMsg = uploadErr?.message || uploadErr?.code || String(uploadErr);
       setUploadingFiles(prev => prev.map(u => u.id === item.id ? { ...u, status: 'error', errorMessage: errorMsg } : u));

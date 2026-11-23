@@ -19,7 +19,11 @@ const ASSET_FILENAME_MAP: Array<[string, string]> = [
 export function isLocalhostRuntime(): boolean {
   if (typeof window === 'undefined') return false;
   const host = window.location.hostname;
-  return host === 'localhost' || host === '127.0.0.1';
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.run.app')
+  );
 }
 
 /**
@@ -45,7 +49,7 @@ export function isEphemeralMediaUrl(url?: string | null): boolean {
 /**
  * Resolves any stored image URL cleanly for both localhost and Vercel production.
  * - Remaps any dev `/src/assets/...` or stale Vite `/assets/<name>-<oldhash>.jpg` to the active build asset.
- * - Replaces broken `blob:`, `file:`, or non-localhost `/uploads/...` URLs with a valid fallback.
+ * - Replaces broken `blob:`, `file:`, or non-Express `/uploads/...` URLs with a valid fallback.
  */
 export function resolveMediaUrl(url?: string | null, fallback: string = STUDIO_IMAGES.heroWedding): string {
   if (!url || typeof url !== 'string') return fallback;
@@ -65,7 +69,7 @@ export function resolveMediaUrl(url?: string | null, fallback: string = STUDIO_I
     }
   }
 
-  // Ephemeral local Express uploads only exist on the local dev machine
+  // Ephemeral Express /uploads paths only resolve on localhost or Express Cloud Run servers
   if (trimmed.startsWith('/uploads/') && !isLocalhostRuntime()) {
     return fallback;
   }

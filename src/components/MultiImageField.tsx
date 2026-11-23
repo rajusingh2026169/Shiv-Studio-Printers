@@ -5,6 +5,11 @@ import { doc, setDoc } from 'firebase/firestore';
 import { Upload, X, ArrowLeft, ArrowRight, Image as ImageIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
 import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
+import {
+  checkFirebaseStorageBucket,
+  checkExpressUploadServer,
+  uploadFileViaExpressApi
+} from '../utils/storageAvailability';
 
 interface MultiImageFieldProps {
   value: string[];
@@ -106,51 +111,52 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       setIsCompressing(false);
 
       const filePath = `diagnostics/${testFile.name}`;
-      console.log(`Target Firebase path: ${filePath}`);
-      const storageRef = ref(storage, filePath);
+      const bucketStatus = await checkFirebaseStorageBucket();
+      let downloadUrl = '';
 
-      const metadata = {
-        contentType: 'image/webp',
-        cacheControl: 'public,max-age=31536000',
-        customMetadata: {
-          testType: 'automated_diagnostic_multi',
-          createdBy: 'AI_Studio_Diagnostic_Tool'
-        }
-      };
+      if (bucketStatus.available) {
+        const storageRef = ref(storage, filePath);
+        const metadata = {
+          contentType: 'image/webp',
+          cacheControl: 'public,max-age=31536000',
+          customMetadata: {
+            testType: 'automated_diagnostic_multi',
+            createdBy: 'AI_Studio_Diagnostic_Tool'
+          }
+        };
 
-      console.log('Initiating uploadBytesResumable() in MultiImageField...');
-      const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
+        const uploadTask = uploadBytesResumable(storageRef, testFile, metadata);
+        uploadTask.on('state_changed', (snapshot) => {
+          const progress = snapshot.totalBytes > 0
+            ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+            : 0;
+          setUploadProgresses({ [testFile.name]: progress });
+        });
 
-      // 1. 'state_changed' observer strictly tracks progress
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = snapshot.totalBytes > 0
-          ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-          : 0;
-        console.log(`Diagnostic Multi-Upload progress: ${progress}%`);
-        setUploadProgresses({ [testFile.name]: progress });
-      });
+        const snapshot = await uploadTask;
+        downloadUrl = await getDownloadURL(snapshot.ref);
+      } else if (await checkExpressUploadServer()) {
+        setUploadProgresses({ [testFile.name]: 35 });
+        downloadUrl = await uploadFileViaExpressApi(testFile, testFile.name, (pct) => {
+          setUploadProgresses({ [testFile.name]: pct });
+        });
+      } else {
+        throw new Error(bucketStatus.reason || 'Firebase Storage bucket is not available.');
+      }
 
-      // 2. Task completion is handled strictly by the uploadTask promise
-      const snapshot = await uploadTask;
-
-      // 3. Explicitly call getDownloadURL() once and wait for it
-      const downloadUrl = await getDownloadURL(snapshot.ref);
-      console.log('Diagnostic download URL:', downloadUrl);
-      
       const finalUrls = [...value, downloadUrl];
       if (firestoreDoc && firestoreField) {
         const docRef = doc(db, firestoreDoc);
         await setDoc(docRef, { [firestoreField]: finalUrls }, { merge: true });
       }
-      
+
       onChange(finalUrls);
       setSuccess(true);
       setUploadProgresses({});
       setUploadingCount(0);
-      console.log('--- DIAGNOSTIC MULTI-TEST COMPLETED SUCCESSFULLY ---');
     } catch (err: any) {
-      console.warn('Diagnostic multi creation/initialization failed:', err);
-      setError(`Diagnostic Setup Failed: ${err.message || err}`);
+      console.warn('Diagnostic multi-upload notice:', err);
+      setError(`Diagnostic Failed: ${err.message || err}`);
       setIsCompressing(false);
       setUploadProgresses({});
       setUploadingCount(0);
@@ -201,63 +207,87 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       });
       setUploadProgresses({ ...progresses });
 
-      // Upload files directly to Firebase Storage in parallel
+      // Upload files via Firebase Storage if active, else Express /api/upload when available
+      const bucketStatus = await checkFirebaseStorageBucket();
+      const expressReady = !bucketStatus.available ? await checkExpressUploadServer() : false;
+
       await Promise.all(
         compressedFiles.map(async (cf) => {
           const filePath = getPath(cf.file.name);
-          const storageRef = ref(storage, filePath);
+          let fileUrl = '';
 
-          const metadata = {
-            contentType: cf.file.type || 'image/webp',
-            cacheControl: 'public,max-age=31536000',
-            customMetadata: {
-              uploadedBy: auth.currentUser?.uid || 'admin',
-              category: storagePath
-            }
-          };
+          if (bucketStatus.available) {
+            try {
+              const storageRef = ref(storage, filePath);
+              const metadata = {
+                contentType: cf.file.type || 'image/webp',
+                cacheControl: 'public,max-age=31536000',
+                customMetadata: {
+                  uploadedBy: auth.currentUser?.uid || 'admin',
+                  category: storagePath
+                }
+              };
 
-          const uploadTask = uploadBytesResumable(storageRef, cf.file, metadata);
+              const uploadTask = uploadBytesResumable(storageRef, cf.file, metadata);
 
-          uploadTask.on('state_changed', (snapshot) => {
-            const progress = snapshot.totalBytes > 0
-              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-              : 0;
-            setUploadProgresses(prev => ({ ...prev, [cf.file.name]: progress }));
-          });
+              uploadTask.on('state_changed', (snapshot) => {
+                const progress = snapshot.totalBytes > 0
+                  ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+                  : 0;
+                setUploadProgresses(prev => ({ ...prev, [cf.file.name]: progress }));
+              });
 
-          const timeoutPromise = new Promise<never>((_, rej) =>
-            setTimeout(() => {
-              try {
-                uploadTask.cancel();
-              } catch {
-                // ignore
+              const timeoutPromise = new Promise<never>((_, rej) =>
+                setTimeout(() => {
+                  try {
+                    uploadTask.cancel();
+                  } catch {
+                    // ignore
+                  }
+                  rej(new Error(`Upload timeout for ${cf.originalName}`));
+                }, 45000)
+              );
+
+              const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+              fileUrl = await getDownloadURL(snapshot.ref);
+            } catch (storageErr) {
+              if (await checkExpressUploadServer()) {
+                fileUrl = await uploadFileViaExpressApi(cf.file, cf.file.name, (pct) => {
+                  setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }));
+                });
+              } else {
+                throw storageErr;
               }
-              rej(new Error(`Upload timeout for ${cf.originalName}`));
-            }, 45000)
-          );
+            }
+          } else if (expressReady) {
+            fileUrl = await uploadFileViaExpressApi(cf.file, cf.file.name, (pct) => {
+              setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }));
+            });
+          } else {
+            throw new Error(bucketStatus.reason || 'Firebase Storage bucket is not initialized.');
+          }
 
-          const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-          const fileUrl = await getDownloadURL(snapshot.ref);
-
-          if (!fileUrl || !fileUrl.startsWith('https://') || fileUrl.length > 2048) {
-            throw new Error(`Invalid cloud URL returned for ${cf.originalName}`);
+          if (!fileUrl || (!fileUrl.startsWith('https://') && !fileUrl.startsWith('/uploads/')) || fileUrl.length > 2048) {
+            throw new Error(`Invalid URL returned for ${cf.originalName}`);
           }
 
           uploadedUrls.push(fileUrl);
           setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 100 }));
 
-          try {
-            const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-            await setDoc(doc(db, 'uploaded_images', imageId), {
-              url: fileUrl,
-              path: filePath,
-              category: storagePath,
-              uploadedAt: new Date().toISOString(),
-              originalName: cf.originalName,
-              compressed: true
-            });
-          } catch (dbErr) {
-            console.warn('Could not record uploaded_images doc:', dbErr);
+          if (fileUrl.startsWith('https://')) {
+            try {
+              const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+              await setDoc(doc(db, 'uploaded_images', imageId), {
+                url: fileUrl,
+                path: filePath,
+                category: storagePath,
+                uploadedAt: new Date().toISOString(),
+                originalName: cf.originalName,
+                compressed: true
+              });
+            } catch (dbErr) {
+              console.warn('Could not record uploaded_images doc:', dbErr);
+            }
           }
         })
       );
@@ -274,7 +304,7 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
       setUploadProgresses({});
       setUploadingCount(0);
     } catch (err: any) {
-      console.error('Compression or upload failed:', err);
+      console.warn('Multi-image upload notice:', err?.message || err);
       setError('Failed to upload some images: ' + (err.message || err));
       setIsCompressing(false);
       setUploadProgresses({});

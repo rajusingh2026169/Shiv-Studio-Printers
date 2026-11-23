@@ -3,6 +3,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, UploadTask } from 'firebase/storage';
 import { VideoItem } from '../types';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
+import {
+  checkFirebaseStorageBucket,
+  checkExpressUploadServer,
+  uploadFileViaExpressApi
+} from './storageAvailability';
 
 export const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
 
@@ -415,10 +420,6 @@ export function uploadVideoResumable(
     let settled = false;
     let fallbackTriggered = false;
 
-    const isLocalHost =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
     const triggerFallbackUpload = async (origError?: any) => {
       if (fallbackTriggered || settled) return;
       fallbackTriggered = true;
@@ -427,9 +428,9 @@ export function uploadVideoResumable(
       } catch {
         // ignore cancel error
       }
-      if (isLocalHost) {
+      if (await checkExpressUploadServer()) {
         try {
-          console.warn('[Video System] Switching video upload to local Express /api/upload endpoint...');
+          console.warn('[Video System] Switching video upload to Express /api/upload endpoint...');
           const apiUrl = await uploadVideoViaApi(file, onProgress);
           settled = true;
           resolve(apiUrl);
@@ -444,7 +445,13 @@ export function uploadVideoResumable(
       reject(new Error(mapFirebaseStorageError(origError || new Error('Video upload to Firebase Storage failed or timed out.'))));
     };
 
-    // Guard against stalled Firebase Storage initialization (15s)
+    // Guard against stalled or 404 Firebase Storage initialization quickly
+    checkFirebaseStorageBucket().then((bucketStatus) => {
+      if (!bucketStatus.available && !settled && lastBytes === 0) {
+        triggerFallbackUpload(new Error(bucketStatus.reason || 'Firebase Storage bucket not available'));
+      }
+    });
+
     const stallTimer = setTimeout(() => {
       if (!settled && lastBytes === 0) {
         triggerFallbackUpload(new Error('Firebase Storage upload did not start within 15 seconds.'));
@@ -578,19 +585,34 @@ export async function uploadThumbnailResumable(
     cacheControl: 'public,max-age=31536000'
   };
 
-  // Upload thumbnail directly to Firebase Storage (25s timeout) so it works identically in production
+  // Upload thumbnail directly to Firebase Storage if bucket is active; else fail over cleanly
   try {
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Thumbnail storage upload timeout')), 25000)
-    );
-    await Promise.race([
-      uploadBytes(storageRef, blobToUpload, metadata),
-      timeoutPromise
-    ]);
-    const downloadUrl = await getDownloadURL(storageRef);
-    return downloadUrl;
+    const bucketStatus = await checkFirebaseStorageBucket();
+    if (bucketStatus.available) {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Thumbnail storage upload timeout')), 25000)
+      );
+      await Promise.race([
+        uploadBytes(storageRef, blobToUpload, metadata),
+        timeoutPromise
+      ]);
+      const downloadUrl = await getDownloadURL(storageRef);
+      return downloadUrl;
+    }
+
+    if (await checkExpressUploadServer()) {
+      return await uploadFileViaExpressApi(blobToUpload, `thumb_${timestamp}.${ext}`);
+    }
+    return DEFAULT_STOCK_THUMB;
   } catch (err) {
     console.warn('[Video System] Storage thumbnail upload notice, using fallback asset:', err);
+    if (await checkExpressUploadServer()) {
+      try {
+        return await uploadFileViaExpressApi(blobToUpload, `thumb_${timestamp}.${ext}`);
+      } catch {
+        // fallback below
+      }
+    }
     return DEFAULT_STOCK_THUMB;
   }
 }

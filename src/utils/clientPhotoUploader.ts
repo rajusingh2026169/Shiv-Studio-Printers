@@ -1,6 +1,11 @@
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { UploadedFileRecord } from '../types';
+import {
+  checkFirebaseStorageBucket,
+  checkExpressUploadServer,
+  uploadFileViaExpressApi
+} from './storageAvailability';
 
 export interface UploadProgressDetails {
   progress: number;
@@ -285,87 +290,73 @@ export const uploadOriginalClientPhoto = async (
 
   let downloadUrl = '';
 
-  // 1. Upload directly to Firebase Storage first (works identically on localhost & Vercel production)
-  try {
-    const storageRef = ref(storage, storagePath);
-    const safeFileName = originalFileName.replace(/[^\x00-\x7F]/g, '_');
-    const safeUploaderName = uploaderName.replace(/[^\x00-\x7F]/g, '_');
+  // 1. Check whether Firebase Storage bucket is active before stalling 30s on retry-limit-exceeded
+  const bucketStatus = await checkFirebaseStorageBucket();
+  let storageErrorMessage = bucketStatus.reason || '';
 
-    const metadata = {
-      contentType,
-      cacheControl: 'public,max-age=31536000',
-      customMetadata: {
-        originalFileName: safeFileName,
-        originalFileSize: String(originalFileSize),
-        uploadedBy: safeUploaderName,
-      }
-    };
+  if (bucketStatus.available) {
+    try {
+      const storageRef = ref(storage, storagePath);
+      const safeFileName = originalFileName.replace(/[^\x00-\x7F]/g, '_');
+      const safeUploaderName = uploaderName.replace(/[^\x00-\x7F]/g, '_');
 
-    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
-
-    uploadTask.on('state_changed', (snap) => {
-      if (snap.totalBytes > 0) {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        emitProgress(pct, snap.bytesTransferred);
-      }
-    });
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => {
-        try {
-          uploadTask.cancel();
-        } catch {
-          // ignore
+      const metadata = {
+        contentType,
+        cacheControl: 'public,max-age=31536000',
+        customMetadata: {
+          originalFileName: safeFileName,
+          originalFileSize: String(originalFileSize),
+          uploadedBy: safeUploaderName,
         }
-        reject(new Error('Firebase Storage upload timed out after 45 seconds'));
-      }, 45000)
-    );
+      };
 
-    const snapshot = await Promise.race([uploadTask, timeoutPromise]);
-    downloadUrl = await getDownloadURL(snapshot.ref);
-  } catch (storageErr: any) {
-    console.warn('[CUSTOMER PHOTO UPLOAD] Firebase Storage notice:', storageErr?.message || storageErr);
-    // Optional local Express fallback ONLY when running on localhost
-    const isLocalHost =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
 
-    if (isLocalHost) {
-      try {
-        const uploadResult = await new Promise<{ url: string } | null>((resolve) => {
-          const xhr = new XMLHttpRequest();
-          const formData = new FormData();
-          formData.append('file', file, originalFileName);
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                resolve(JSON.parse(xhr.responseText));
-              } catch {
-                resolve(null);
-              }
-            } else {
-              resolve(null);
-            }
-          };
-          xhr.onerror = () => resolve(null);
-          xhr.ontimeout = () => resolve(null);
-          xhr.timeout = 45000;
-          xhr.open('POST', '/api/upload');
-          xhr.send(formData);
-        });
-        if (uploadResult && uploadResult.url) {
-          downloadUrl = uploadResult.url;
+      uploadTask.on('state_changed', (snap) => {
+        if (snap.totalBytes > 0) {
+          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          emitProgress(pct, snap.bytesTransferred);
         }
-      } catch {
-        // handled below
-      }
-    }
+      });
 
-    if (!downloadUrl) {
-      throw new Error(
-        `Cloud file upload failed (${storageErr?.code || storageErr?.message || 'network error'}). Please check your connection and try again.`
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => {
+          try {
+            uploadTask.cancel();
+          } catch {
+            // ignore
+          }
+          reject(new Error('Firebase Storage upload timed out after 45 seconds'));
+        }, 45000)
       );
+
+      const snapshot = await Promise.race([uploadTask, timeoutPromise]);
+      downloadUrl = await getDownloadURL(snapshot.ref);
+    } catch (storageErr: any) {
+      storageErrorMessage = storageErr?.code || storageErr?.message || 'Firebase Storage error';
+      console.warn('[CUSTOMER PHOTO UPLOAD] Firebase Storage notice:', storageErrorMessage);
     }
+  } else {
+    console.warn('[CUSTOMER PHOTO UPLOAD] Firebase Storage bucket check:', storageErrorMessage);
+  }
+
+  // 2. Fail over to Express /api/upload whenever Express server is running (localhost or Cloud Run AI Studio)
+  if (!downloadUrl && (await checkExpressUploadServer())) {
+    try {
+      emitProgress(20, Math.round(originalFileSize * 0.2), 'Uploading to studio server...');
+      downloadUrl = await uploadFileViaExpressApi(file, originalFileName, (pct, loaded) => {
+        emitProgress(pct, loaded);
+      });
+    } catch (apiErr: any) {
+      console.warn('[CUSTOMER PHOTO UPLOAD] Express server upload notice:', apiErr?.message || apiErr);
+    }
+  }
+
+  if (!downloadUrl) {
+    throw new Error(
+      storageErrorMessage ||
+        'Cloud file upload failed. Please enable Firebase Storage in Firebase Console or check your network connection and try again.'
+    );
   }
 
   // Register the downloadUrl to our local cache too
