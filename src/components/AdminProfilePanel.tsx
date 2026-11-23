@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { db, OperationType, handleFirestoreError } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { ImageField } from './ImageField';
+import { StudioImage } from './StudioMedia';
 import { UserCheck, ShieldCheck, LogOut, Save, Loader2, CheckCircle2 } from 'lucide-react';
 
 export const AdminProfilePanel: React.FC = () => {
@@ -106,7 +107,7 @@ export const AdminProfilePanel: React.FC = () => {
       <div className="p-4 bg-[#111111] border border-white/10 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {avatarUrl ? (
-            <img src={avatarUrl} alt={fullName} className="h-12 w-12 rounded-full object-cover border border-[#D4AF37]/40" />
+            <StudioImage src={avatarUrl} fallback="" alt={fullName} className="h-12 w-12 rounded-full object-cover border border-[#D4AF37]/40" />
           ) : (
             <div className="h-12 w-12 rounded-full bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] font-serif text-xl font-bold">
               {(fullName || currentUser?.email || 'A').charAt(0).toUpperCase()}

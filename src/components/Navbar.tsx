@@ -4,7 +4,7 @@ import { useAuth, isAdminRoleValue } from '../context/AuthContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
-import { applyImageFallback, resolveMediaUrl } from '../utils/mediaResolver';
+import { StudioImage } from './StudioMedia';
 import { OfferBannerDisplay } from './OfferBannerDisplay';
 import {
   Menu,
@@ -179,12 +179,11 @@ export const Navbar: React.FC<NavbarProps> = ({ cartCount }) => {
           <div className="flex items-center justify-between h-16 gap-3 sm:gap-4">
             {/* Brand Logo */}
             <Link to="/" className="flex items-center space-x-2.5 sm:space-x-3 shrink-0 min-w-0">
-              <img
-                src={resolveMediaUrl(settings.logoUrl, STUDIO_IMAGES.logo)}
+              <StudioImage
+                src={settings.logoUrl}
+                fallback={STUDIO_IMAGES.logo}
                 alt={settings.studioName || 'SHIV STUDIO'}
                 className="h-8 w-8 sm:h-9 sm:w-9 object-cover rounded-full border border-[#D4AF37]/50 shrink-0"
-                referrerPolicy="no-referrer"
-                onError={(e) => applyImageFallback(e, STUDIO_IMAGES.logo)}
               />
               <div className="leading-none min-w-0">
                 <span className="font-display font-bold text-base sm:text-xl tracking-wider text-white uppercase whitespace-nowrap block truncate">

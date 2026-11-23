@@ -554,6 +554,33 @@
       },
       "required": ["url", "path", "uploadedAt"]
     },
+    "UploadedMedia": {
+      "title": "UploadedMedia",
+      "description": "Chunked cloud media file metadata stored in Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fileName": { "type": "string", "maxLength": 300 },
+        "contentType": { "type": "string", "maxLength": 160 },
+        "size": { "type": "number" },
+        "chunkCount": { "type": "number" },
+        "category": { "type": "string", "maxLength": 80 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "uploadedBy": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "fileName", "contentType", "size", "chunkCount", "category", "createdAt"]
+    },
+    "UploadedMediaChunk": {
+      "title": "UploadedMediaChunk",
+      "description": "Indexed binary chunk document belonging to an UploadedMedia record",
+      "type": "object",
+      "properties": {
+        "index": { "type": "number" },
+        "data": { "type": "string", "maxLength": 800000 }
+      },
+      "required": ["index", "data"]
+    },
     "SystemLogItem": {
       "title": "SystemLogItem",
       "description": "Admin-only outbound notification or mail trigger document",
@@ -590,6 +617,8 @@
     "settings/{settingId}": { "schema": "StudioSettings", "description": "Studio settings backup document" },
     "website_settings/{settingId}": { "schema": "StudioSettings", "description": "Active website settings document" },
     "uploaded_images/{imageId}": { "schema": "UploadedImage", "description": "Uploaded asset metadata index" },
+    "uploaded_media/{mediaId}": { "schema": "UploadedMedia", "description": "Firestore cloud media asset metadata" },
+    "uploaded_media/{mediaId}/chunks/{chunkId}": { "schema": "UploadedMediaChunk", "description": "Chunked base64 payload slices for uploaded media" },
     "notifications/{notificationId}": { "schema": "SystemLogItem", "description": "Admin notification records" },
     "mail/{mailId}": { "schema": "SystemLogItem", "description": "Admin outbound email queue" }
   }

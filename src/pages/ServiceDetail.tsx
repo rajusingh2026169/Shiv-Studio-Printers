@@ -7,7 +7,7 @@ import { ServiceItem, PackageItem, GalleryItem } from '../types';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
 import { getImageForSlugOrCategory } from '../assets/studioAssets';
-import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
+import { StudioImage } from '../components/StudioMedia';
 import { Check, ArrowLeft, CalendarDays, MessageCircle, ZoomIn } from 'lucide-react';
 
 export const ServiceDetail: React.FC<{ forcedSlug?: string }> = ({ forcedSlug }) => {
@@ -111,12 +111,11 @@ export const ServiceDetail: React.FC<{ forcedSlug?: string }> = ({ forcedSlug })
 
       {/* Cover Banner */}
       <section className="relative min-h-[55vh] flex items-end bg-[#111111] border-b border-white/10">
-        <img
-          src={resolveMediaUrl(coverImage, fallbackDef.coverImage)}
+        <StudioImage
+          src={coverImage}
+          fallback={fallbackDef.coverImage}
           alt={`${title} by SHIV STUDIO Khaga`}
           className="absolute inset-0 w-full h-full object-cover opacity-45"
-          referrerPolicy="no-referrer"
-          onError={(e) => applyImageFallback(e, fallbackDef.coverImage)}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-[#111111]/65 to-transparent" />
 
@@ -220,13 +219,12 @@ export const ServiceDetail: React.FC<{ forcedSlug?: string }> = ({ forcedSlug })
                   onClick={() => setLightboxImage(imgUrl)}
                   className="group relative aspect-[4/3] rounded-xl overflow-hidden bg-[#111111] border border-white/10 cursor-zoom-in"
                 >
-                  <img
-                    src={resolveMediaUrl(imgUrl, fallbackDef.coverImage)}
+                  <StudioImage
+                    src={imgUrl}
+                    fallback={fallbackDef.coverImage}
                     alt={`${title} sample ${idx + 1} by SHIV STUDIO`}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => applyImageFallback(e, fallbackDef.coverImage)}
                   />
                   <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <span className="p-2.5 rounded-full bg-[#111111]/80 text-[#D4AF37]">
@@ -265,12 +263,11 @@ export const ServiceDetail: React.FC<{ forcedSlug?: string }> = ({ forcedSlug })
               >
                 <div>
                   <div className="aspect-[4/3] bg-[#111111]">
-                    <img
-                      src={resolveMediaUrl(pkg.image, getImageForSlugOrCategory(pkg.category))}
+                    <StudioImage
+                      src={pkg.image}
+                      fallback={getImageForSlugOrCategory(pkg.category)}
                       alt={pkg.name}
                       className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(pkg.category))}
                     />
                   </div>
                   <div className="p-6 space-y-3">
@@ -345,12 +342,11 @@ export const ServiceDetail: React.FC<{ forcedSlug?: string }> = ({ forcedSlug })
           className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 cursor-zoom-out"
           onClick={() => setLightboxImage(null)}
         >
-          <img
-            src={resolveMediaUrl(lightboxImage, fallbackDef.coverImage)}
+          <StudioImage
+            src={lightboxImage}
+            fallback={fallbackDef.coverImage}
             alt="Enlarged portfolio preview"
             className="max-w-full max-h-[90vh] object-contain rounded-xl border border-white/15"
-            referrerPolicy="no-referrer"
-            onError={(e) => applyImageFallback(e, fallbackDef.coverImage)}
           />
         </div>
       )}

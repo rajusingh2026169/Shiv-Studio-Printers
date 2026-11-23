@@ -26,6 +26,8 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { InvoiceModal } from '../components/InvoiceModal';
+import { StudioImage } from '../components/StudioMedia';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 
 interface CartProps {
   cart: CartItem[];
@@ -794,11 +796,11 @@ export const Cart: React.FC<CartProps> = ({
                       <div key={itemKey} className="py-4 flex flex-col gap-3 first:pt-0 last:pb-0">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex items-center space-x-4">
-                            <img 
+                            <StudioImage 
                               src={item.product.image} 
+                              fallback={STUDIO_IMAGES.luxuryAlbumFrame}
                               alt={item.product.title} 
                               className="h-16 w-16 rounded-xl object-cover border border-slate-800 shrink-0" 
-                              referrerPolicy="no-referrer"
                             />
                             <div>
                               <h4 className="text-sm font-bold text-white line-clamp-1">{item.product.title}</h4>
@@ -1286,7 +1288,7 @@ export const Cart: React.FC<CartProps> = ({
               {wishlist.map((p) => (
                 <div key={p.id} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex items-center justify-between gap-4 text-xs">
                   <div className="flex items-center space-x-3">
-                    <img src={p.image} alt={p.title} className="h-12 w-12 rounded-lg object-cover border border-slate-800" referrerPolicy="no-referrer" />
+                    <StudioImage src={p.image} fallback={STUDIO_IMAGES.luxuryAlbumFrame} alt={p.title} className="h-12 w-12 rounded-lg object-cover border border-slate-800" />
                     <div>
                       <h4 className="font-bold text-white line-clamp-1">{p.title}</h4>
                       <p className="text-amber-500 font-bold mt-0.5">₹{(p.discountPrice || p.price).toLocaleString('en-IN')}</p>

@@ -11,6 +11,8 @@ import { db, OperationType, handleFirestoreError } from '../firebase';
 import { Order, ProofVersion, WeddingCardItem } from '../types';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
 import { ImageField } from './ImageField';
+import { StudioImage } from './StudioMedia';
+import { isFsMediaUrl } from '../utils/firestoreMediaStore';
 import {
   ALL_WEDDING_CARD_CATEGORIES,
   DEFAULT_CARD_COLORS,
@@ -930,11 +932,11 @@ export const AdminWeddingCardManager: React.FC = () => {
                   >
                     <div>
                       <div className="relative aspect-[4/3] bg-slate-950 overflow-hidden">
-                        <img
+                        <StudioImage
                           src={cardImg}
+                          fallback={STUDIO_IMAGES.royalWeddingInvite}
                           alt={cardTitle}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          referrerPolicy="no-referrer"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
 
@@ -1692,8 +1694,19 @@ export const AdminWeddingCardManager: React.FC = () => {
                         <div key={idx} className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
                           <span className="truncate text-white font-medium">{fName}</span>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <a href={fUrl} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-slate-800 text-slate-200 rounded text-[10px] font-bold">
-                              View
+                            <a
+                              href={isFsMediaUrl(fUrl) ? '#download-ref' : fUrl}
+                              target={isFsMediaUrl(fUrl) ? undefined : '_blank'}
+                              rel={isFsMediaUrl(fUrl) ? undefined : 'noopener noreferrer'}
+                              onClick={(e) => {
+                                if (isFsMediaUrl(fUrl)) {
+                                  e.preventDefault();
+                                  downloadOriginalFile(fUrl, fName);
+                                }
+                              }}
+                              className="px-2 py-1 bg-slate-800 text-slate-200 rounded text-[10px] font-bold"
+                            >
+                              {isFsMediaUrl(fUrl) ? 'Download' : 'View'}
                             </a>
                             <button
                               type="button"
@@ -1749,12 +1762,18 @@ export const AdminWeddingCardManager: React.FC = () => {
                           {pv.customerFeedback && <p className="text-rose-300 text-[11px]">Client feedback: {pv.customerFeedback}</p>}
                         </div>
                         <a
-                          href={pv.proofUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href={isFsMediaUrl(pv.proofUrl) ? '#download-proof' : pv.proofUrl}
+                          target={isFsMediaUrl(pv.proofUrl) ? undefined : '_blank'}
+                          rel={isFsMediaUrl(pv.proofUrl) ? undefined : 'noopener noreferrer'}
+                          onClick={(e) => {
+                            if (isFsMediaUrl(pv.proofUrl)) {
+                              e.preventDefault();
+                              downloadOriginalFile(pv.proofUrl, pv.fileName || `Proof_v${pv.version}`);
+                            }
+                          }}
                           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold rounded-lg text-[11px] shrink-0 text-center"
                         >
-                          Open Proof File
+                          {isFsMediaUrl(pv.proofUrl) ? 'Download Proof File' : 'Open Proof File'}
                         </a>
                       </div>
                     ))}
@@ -1883,11 +1902,11 @@ export const AdminWeddingCardManager: React.FC = () => {
             >
               <X className="h-6 w-6" />
             </button>
-            <img
+            <StudioImage
               src={previewImage}
+              fallback={STUDIO_IMAGES.royalWeddingInvite}
               alt="Zoom Preview"
               className="w-full max-h-[85vh] object-contain rounded-2xl"
-              referrerPolicy="no-referrer"
             />
           </div>
         </div>

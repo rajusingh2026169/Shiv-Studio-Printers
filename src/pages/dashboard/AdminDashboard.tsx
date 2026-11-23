@@ -7,7 +7,9 @@ import { Order, Booking, ProductItem, Expense, ServiceItem, GalleryItem, OfferIt
 import { STUDIO_IMAGES, getImageForSlugOrCategory } from '../../assets/studioAssets';
 import { buildWhatsAppUrl } from '../../components/WhatsAppButton';
 import { uploadBase64ToStorage } from '../../utils/imageUploader';
-import { resolveMediaUrl, applyImageFallback, isEphemeralMediaUrl } from '../../utils/mediaResolver';
+import { isEphemeralMediaUrl } from '../../utils/mediaResolver';
+import { StudioImage } from '../../components/StudioMedia';
+import { fetchFirestoreMediaBlob, isFsMediaUrl } from '../../utils/firestoreMediaStore';
 import { 
   TrendingUp, 
   ShoppingBag, 
@@ -486,8 +488,10 @@ export const AdminDashboard: React.FC = () => {
       const fileList: { url: string; name: string }[] = [];
       if (Array.isArray(files)) {
         files.forEach((f) => {
-          if (f && typeof f === 'object' && f.url) {
-            fileList.push({ url: f.url, name: f.name || 'custom_image.jpg' });
+          const resolvedUrl = f && typeof f === 'object' ? (f.originalFileUrl || f.url) : '';
+          const resolvedName = f && typeof f === 'object' ? (f.originalFileName || f.name || 'custom_image.jpg') : 'custom_image.jpg';
+          if (resolvedUrl) {
+            fileList.push({ url: resolvedUrl, name: resolvedName });
           } else if (typeof f === 'string') {
             fileList.push({ url: f, name: f.split('/').pop()?.split('?')[0] || 'custom_image.jpg' });
           }
@@ -515,7 +519,16 @@ export const AdminDashboard: React.FC = () => {
             (await getStoredOriginalBlob(fileInfo.url)) || 
             (await getStoredOriginalBlob(fileInfo.name));
 
-          // 2. If not found in cache, fetch from remote URL or local uploads safely
+          // 2. If fsmedia:// cloud Firestore file, fetch and reassemble original binary chunks
+          if (!blob && isFsMediaUrl(fileInfo.url)) {
+            try {
+              blob = await fetchFirestoreMediaBlob(fileInfo.url);
+            } catch (fsErr) {
+              console.warn(`Firestore media fetch failed for ${fileInfo.url}:`, fsErr);
+            }
+          }
+
+          // 3. If not found in cache, fetch from remote URL or local uploads safely
           if (!blob && fileInfo.url && (fileInfo.url.startsWith('http://') || fileInfo.url.startsWith('https://') || fileInfo.url.startsWith('blob:') || fileInfo.url.startsWith('/'))) {
             try {
               const response = await fetch(fileInfo.url);
@@ -1932,7 +1945,7 @@ export const AdminDashboard: React.FC = () => {
                         <div key={member.id || index} className="p-4 bg-slate-950 border border-slate-850 rounded-2xl flex flex-col sm:flex-row justify-between gap-4 items-start sm:items-center">
                           <div className="flex items-center gap-4">
                             {member.image ? (
-                              <img src={member.image} alt={member.name} className="h-10 w-10 rounded-full object-cover border border-amber-500/30" referrerPolicy="no-referrer" />
+                              <StudioImage src={member.image} fallback="" alt={member.name} className="h-10 w-10 rounded-full object-cover border border-amber-500/30" />
                             ) : (
                               <div className="h-10 w-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 font-bold uppercase">{member.name ? member.name[0] : '?'}</div>
                             )}
@@ -2229,12 +2242,11 @@ export const AdminDashboard: React.FC = () => {
                     <div key={s.id} className="bg-slate-900 border border-slate-850 p-4 rounded-3xl flex flex-col justify-between">
                       <div>
                         <div className="relative">
-                          <img 
-                            src={resolveMediaUrl(s.coverImage || s.image, getImageForSlugOrCategory(s.title || s.category))} 
+                          <StudioImage 
+                            src={s.coverImage || s.image} 
+                            fallback={getImageForSlugOrCategory(s.title || s.category)}
                             alt={s.title} 
                             className="aspect-video rounded-2xl object-cover w-full bg-slate-950" 
-                            referrerPolicy="no-referrer"
-                            onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(s.title || s.category))}
                           />
                           {isEphemeralMediaUrl(s.coverImage || s.image) && (
                             <span className="absolute top-2 left-2 px-2 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-bold font-mono uppercase rounded">
@@ -2383,11 +2395,11 @@ export const AdminDashboard: React.FC = () => {
                           <div key={p.id} className="bg-slate-900 border border-slate-850 p-4 rounded-3xl flex flex-col justify-between hover:border-slate-800 transition-all">
                             <div>
                               <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-950">
-                                <img 
+                                <StudioImage 
                                   src={p.image} 
+                                  fallback={STUDIO_IMAGES.luxuryAlbumFrame}
                                   alt={p.title} 
                                   className="w-full h-full object-cover" 
-                                  referrerPolicy="no-referrer"
                                 />
                                 
                                 {/* Overlay Badges */}
@@ -2713,12 +2725,18 @@ export const AdminDashboard: React.FC = () => {
                                       </div>
                                       <div className="flex items-center gap-1 pt-1">
                                         <a
-                                          href={targetUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
+                                          href={isFsMediaUrl(targetUrl) ? '#download-file' : targetUrl}
+                                          target={isFsMediaUrl(targetUrl) ? undefined : '_blank'}
+                                          rel={isFsMediaUrl(targetUrl) ? undefined : 'noopener noreferrer'}
+                                          onClick={(e) => {
+                                            if (isFsMediaUrl(targetUrl)) {
+                                              e.preventDefault();
+                                              downloadOriginalFile(targetUrl, targetName);
+                                            }
+                                          }}
                                           className="flex-1 py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold text-center transition-all"
                                         >
-                                          Preview
+                                          {isFsMediaUrl(targetUrl) ? 'Open' : 'Preview'}
                                         </a>
                                         <button
                                           type="button"
@@ -2739,12 +2757,18 @@ export const AdminDashboard: React.FC = () => {
                                 <p className="text-white font-mono text-[10px] font-bold truncate">{ord.uploadedFileName || 'Original Photo'}</p>
                                 <div className="flex items-center gap-1 pt-1">
                                   <a
-                                    href={ord.uploadedFileUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    href={isFsMediaUrl(ord.uploadedFileUrl) ? '#download-file' : ord.uploadedFileUrl}
+                                    target={isFsMediaUrl(ord.uploadedFileUrl) ? undefined : '_blank'}
+                                    rel={isFsMediaUrl(ord.uploadedFileUrl) ? undefined : 'noopener noreferrer'}
+                                    onClick={(e) => {
+                                      if (isFsMediaUrl(ord.uploadedFileUrl!)) {
+                                        e.preventDefault();
+                                        downloadOriginalFile(ord.uploadedFileUrl!, ord.uploadedFileName || 'original_photo.jpg');
+                                      }
+                                    }}
                                     className="flex-1 py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold text-center"
                                   >
-                                    Preview
+                                    {isFsMediaUrl(ord.uploadedFileUrl) ? 'Open' : 'Preview'}
                                   </a>
                                   <button
                                     type="button"
@@ -2899,12 +2923,11 @@ export const AdminDashboard: React.FC = () => {
                   {gallery.map((g) => (
                     <div key={g.id} className="bg-slate-900 border border-slate-850 p-3 rounded-2xl relative group">
                       <div className="relative">
-                        <img
-                          src={resolveMediaUrl(g.imageUrl, getImageForSlugOrCategory(g.category))}
+                        <StudioImage
+                          src={g.imageUrl}
+                          fallback={getImageForSlugOrCategory(g.category)}
                           alt={g.title}
                           className="aspect-video w-full object-cover rounded-xl bg-slate-950"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(g.category))}
                         />
                         {isEphemeralMediaUrl(g.imageUrl) && (
                           <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-amber-500 text-slate-950 text-[9px] font-bold font-mono uppercase rounded">
@@ -3195,7 +3218,7 @@ export const AdminDashboard: React.FC = () => {
                       <div key={b.id} className="bg-slate-900 border border-slate-850 p-4 rounded-3xl flex flex-col justify-between">
                         <div className="space-y-3">
                           {b.image && (
-                            <img src={b.image} alt={b.title} className="w-full h-40 object-cover rounded-2xl border border-slate-800" referrerPolicy="no-referrer" />
+                            <StudioImage src={b.image} fallback={STUDIO_IMAGES.heroWedding} alt={b.title} className="w-full h-40 object-cover rounded-2xl border border-slate-800" />
                           )}
                           <div>
                             <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 font-mono text-[10px] uppercase font-bold rounded">{b.category}</span>
@@ -4058,11 +4081,11 @@ export const AdminDashboard: React.FC = () => {
 
                     {pQrCode && (
                       <div className="pt-4 border-t border-slate-850 flex items-center gap-3">
-                        <img 
+                        <StudioImage 
                           src={pQrCode} 
+                          fallback=""
                           alt="Dynamic QR Code" 
                           className="h-16 w-16 bg-white p-1 rounded-lg" 
-                          referrerPolicy="no-referrer"
                         />
                         <div className="space-y-0.5">
                           <span className="font-mono text-[10px] text-slate-300 block font-bold">Dynamic QR Code</span>
@@ -4086,11 +4109,11 @@ export const AdminDashboard: React.FC = () => {
                       <div className="max-w-xs bg-slate-900 border border-slate-800 p-4 rounded-3xl flex flex-col justify-between shadow-xl">
                         <div>
                           <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-950">
-                            <img 
+                            <StudioImage 
                               src={pImage || (pImages && pImages[0]) || ''} 
+                              fallback={STUDIO_IMAGES.luxuryAlbumFrame}
                               alt="Cover Preview" 
                               className="w-full h-full object-cover" 
-                              referrerPolicy="no-referrer"
                             />
                             <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
                               {pLabelFeatured && <span className="px-1.5 py-0.5 bg-amber-400 text-slate-950 font-extrabold text-[8px] rounded uppercase">★ Featured</span>}

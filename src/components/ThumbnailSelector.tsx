@@ -6,6 +6,7 @@ import {
   captureFrameFromVideoElement,
   formatBytes 
 } from '../utils/videoUtils';
+import { StudioImage } from './StudioMedia';
 
 interface ThumbnailSelectorProps {
   videoFileOrSource: File | string | null;
@@ -167,11 +168,11 @@ export const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
       {/* Preview Box */}
       {previewUrl ? (
         <div className="relative aspect-video rounded-xl overflow-hidden bg-black border border-slate-800 group">
-          <img 
+          <StudioImage 
             src={previewUrl} 
+            fallback=""
             alt="Thumbnail Preview" 
             className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 p-3 flex flex-col justify-end">
             <div className="flex items-center justify-between text-xs text-slate-300">

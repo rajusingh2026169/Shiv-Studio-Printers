@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { OfferBanner, BannerDisplayPosition } from '../types';
 import { getActiveOfferBanners } from '../utils/bannerService';
+import { StudioImage, StudioVideo, useResolvedMediaUrl } from './StudioMedia';
 
 interface OfferBannerDisplayProps {
   position: BannerDisplayPosition;
@@ -37,6 +38,7 @@ export const OfferBannerDisplay: React.FC<OfferBannerDisplayProps> = ({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [failedVideos, setFailedVideos] = useState<Record<string, boolean>>({});
+  const resolvedMobileImageUrl = useResolvedMediaUrl(banners[currentIndex]?.mobileImageUrl, '');
 
   useEffect(() => {
     let isMounted = true;
@@ -159,7 +161,7 @@ export const OfferBannerDisplay: React.FC<OfferBannerDisplayProps> = ({
       {/* Background Media: Video or Responsive Desktop/Mobile Images */}
       <div className="absolute inset-0 z-0 bg-slate-950">
         {currentBanner.backgroundVideoUrl && !failedVideos[currentBanner.backgroundVideoUrl] ? (
-          <video
+          <StudioVideo
             key={currentBanner.backgroundVideoUrl}
             src={currentBanner.backgroundVideoUrl}
             autoPlay
@@ -176,11 +178,12 @@ export const OfferBannerDisplay: React.FC<OfferBannerDisplayProps> = ({
           />
         ) : (
           <picture className="w-full h-full block">
-            {currentBanner.mobileImageUrl && (
-              <source media="(max-width: 767px)" srcSet={currentBanner.mobileImageUrl} />
+            {resolvedMobileImageUrl && (
+              <source media="(max-width: 767px)" srcSet={resolvedMobileImageUrl} />
             )}
-            <img
+            <StudioImage
               src={currentBanner.desktopImageUrl}
+              fallback=""
               alt={currentBanner.title}
               className="w-full h-full object-cover opacity-60 transition-all duration-700 hover:scale-105"
               loading="lazy"

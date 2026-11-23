@@ -2,6 +2,7 @@ import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { checkFirebaseStorageBucket, checkExpressUploadServer } from './storageAvailability';
+import { uploadDataUrlToFirestoreMedia } from './firestoreMediaStore';
 
 /**
  * Converts a Data URL (base64) to a Blob object.
@@ -80,6 +81,16 @@ export async function uploadBase64ToStorage(
     }
   }
 
+  // Durable Firestore Cloud Media fallback (works on live Vercel, preview, and localhost)
+  try {
+    const fsMediaUrl = await uploadDataUrlToFirestoreMedia(base64String, cleanFolder);
+    if (fsMediaUrl) {
+      return fsMediaUrl;
+    }
+  } catch (fsErr) {
+    console.warn('Firestore cloud media image fallback notice:', fsErr);
+  }
+
   if (await checkExpressUploadServer()) {
     const res = await fetch('/api/upload-base64', {
       method: 'POST',
@@ -96,7 +107,7 @@ export async function uploadBase64ToStorage(
 
   throw new Error(
     bucketCheck.reason ||
-      'Cloud image upload failed. Please enable Firebase Storage in Firebase Console or paste an https:// image URL.'
+      'Cloud image upload failed. Please check your connection or paste an https:// image URL.'
   );
 }
 

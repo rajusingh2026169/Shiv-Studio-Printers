@@ -4,6 +4,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { BlogItem } from '../types';
 import { SEOHead } from '../components/SEOHead';
+import { StudioImage } from '../components/StudioMedia';
 import { useAuth } from '../context/AuthContext';
 import { BookOpen, User, Calendar, Tag, ChevronRight } from 'lucide-react';
 
@@ -79,7 +80,7 @@ export const Blog: React.FC = () => {
               >
                 <div>
                   <div className="relative aspect-video overflow-hidden">
-                    <img src={blog.image} alt={blog.title} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" referrerPolicy="no-referrer" loading="lazy" />
+                    <StudioImage src={blog.image} alt={blog.title} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" loading="lazy" />
                     <span className="absolute top-4 left-4 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-md text-xxs font-bold text-amber-500 border border-slate-850 uppercase tracking-wide">
                       {blog.category}
                     </span>
@@ -135,7 +136,7 @@ export const Blog: React.FC = () => {
 
             <div className="space-y-6">
               <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-800">
-                <img src={selectedBlog.image} alt={selectedBlog.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
+                <StudioImage src={selectedBlog.image} alt={selectedBlog.title} className="w-full h-full object-cover" loading="lazy" />
               </div>
 
               <div className="flex items-center space-x-4 text-slate-500 text-xxs font-mono">

@@ -5,12 +5,14 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { Upload, Link2, CheckCircle2, AlertCircle, X, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
-import { isEphemeralMediaUrl, resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
+import { isEphemeralMediaUrl } from '../utils/mediaResolver';
 import {
   checkFirebaseStorageBucket,
   checkExpressUploadServer,
   uploadFileViaExpressApi
 } from '../utils/storageAvailability';
+import { uploadFileToFirestoreMedia, isFsMediaUrl } from '../utils/firestoreMediaStore';
+import { StudioImage } from './StudioMedia';
 
 interface ImageFieldProps {
   value: string;
@@ -145,18 +147,29 @@ export const ImageField: React.FC<ImageFieldProps> = ({
 
         const snapshot = await uploadTask;
         downloadUrl = await getDownloadURL(snapshot.ref);
-      } else if (await checkExpressUploadServer()) {
-        setIsCompressing(false);
-        setUploadProgress(35);
-        downloadUrl = await uploadFileViaExpressApi(testFile, testFile.name, (pct) => {
-          setUploadProgress(pct);
-        });
       } else {
-        throw new Error(bucketStatus.reason || 'Firebase Storage bucket is not available.');
+        setIsCompressing(false);
+        setUploadProgress(25);
+        try {
+          downloadUrl = await uploadFileToFirestoreMedia(testFile, {
+            fileName: testFile.name,
+            contentType: 'image/webp',
+            category: 'diagnostics',
+            onProgress: (pct) => setUploadProgress(pct)
+          });
+        } catch (fsErr) {
+          if (await checkExpressUploadServer()) {
+            downloadUrl = await uploadFileViaExpressApi(testFile, testFile.name, (pct) => {
+              setUploadProgress(pct);
+            });
+          } else {
+            throw fsErr;
+          }
+        }
       }
 
       if (downloadUrl) {
-        if (downloadUrl.startsWith('https://')) {
+        if (downloadUrl.startsWith('https://') || isFsMediaUrl(downloadUrl)) {
           try {
             const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
             await setDoc(doc(db, 'uploaded_images', imageId), {
@@ -274,6 +287,21 @@ export const ImageField: React.FC<ImageFieldProps> = ({
         cloudError = new Error(bucketStatus.reason || 'Firebase Storage bucket not initialized.');
       }
 
+      // Fall back cleanly to Cloud Firestore Media (works on live Vercel, preview, & localhost)
+      if (!downloadUrl) {
+        try {
+          downloadUrl = await uploadFileToFirestoreMedia(compressedFile, {
+            fileName: compressedFile.name,
+            contentType: compressedFile.type || 'image/webp',
+            category: storagePath,
+            uploadedBy: auth.currentUser?.email || 'Admin',
+            onProgress: (pct) => setUploadProgress(pct)
+          });
+        } catch (fsErr: any) {
+          cloudError = cloudError || fsErr;
+        }
+      }
+
       // Fall back cleanly to Express /api/upload when running on localhost or Cloud Run preview server
       if (!downloadUrl && (await checkExpressUploadServer())) {
         downloadUrl = await uploadFileViaExpressApi(compressedFile, compressedFile.name, (pct) => {
@@ -282,10 +310,10 @@ export const ImageField: React.FC<ImageFieldProps> = ({
       }
 
       if (!downloadUrl) {
-        throw cloudError || new Error('Firebase Storage did not return a download URL.');
+        throw cloudError || new Error('Cloud image upload did not return a download URL.');
       }
 
-      if (!downloadUrl.startsWith('https://') && !downloadUrl.startsWith('/uploads/')) {
+      if (!downloadUrl.startsWith('https://') && !downloadUrl.startsWith('/uploads/') && !isFsMediaUrl(downloadUrl)) {
         throw new Error('Upload did not return a valid image URL.');
       }
 
@@ -295,8 +323,8 @@ export const ImageField: React.FC<ImageFieldProps> = ({
 
       setUploadProgress(100);
 
-      // Log metadata record in Firestore (when using cloud HTTPS)
-      if (downloadUrl.startsWith('https://')) {
+      // Log metadata record in Firestore
+      if (downloadUrl.startsWith('https://') || isFsMediaUrl(downloadUrl)) {
         try {
           const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           await setDoc(doc(db, 'uploaded_images', imageId), {
@@ -454,13 +482,11 @@ export const ImageField: React.FC<ImageFieldProps> = ({
         <div className="space-y-3">
           {value ? (
             <div className="relative group border border-slate-800 rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center">
-              <img
-                src={resolveMediaUrl(value)}
+              <StudioImage
+                src={value}
                 alt="Preview"
                 loading="lazy"
                 className="w-full h-full object-contain"
-                referrerPolicy="no-referrer"
-                onError={(e) => applyImageFallback(e)}
               />
               <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                 <button
@@ -558,13 +584,11 @@ export const ImageField: React.FC<ImageFieldProps> = ({
           </div>
           {value && (
             <div className="relative group border border-slate-800 rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center">
-              <img
-                src={resolveMediaUrl(value)}
+              <StudioImage
+                src={value}
                 alt="Preview"
                 loading="lazy"
                 className="w-full h-full object-contain"
-                referrerPolicy="no-referrer"
-                onError={(e) => applyImageFallback(e)}
               />
               <button
                 type="button"

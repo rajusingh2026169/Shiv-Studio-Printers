@@ -6,6 +6,12 @@ import {
   checkExpressUploadServer,
   uploadFileViaExpressApi
 } from './storageAvailability';
+import {
+  MAX_FIRESTORE_MEDIA_BYTES,
+  fetchFirestoreMediaBlob,
+  isFsMediaUrl,
+  uploadFileToFirestoreMedia
+} from './firestoreMediaStore';
 
 export interface UploadProgressDetails {
   progress: number;
@@ -340,7 +346,26 @@ export const uploadOriginalClientPhoto = async (
     console.warn('[CUSTOMER PHOTO UPLOAD] Firebase Storage bucket check:', storageErrorMessage);
   }
 
-  // 2. Fail over to Express /api/upload whenever Express server is running (localhost or Cloud Run AI Studio)
+  // 2. Durable Cloud Firestore Media failover (works identically on live Vercel, preview, & localhost across devices)
+  if (!downloadUrl && originalFileSize <= MAX_FIRESTORE_MEDIA_BYTES) {
+    try {
+      emitProgress(15, Math.round(originalFileSize * 0.15), 'Saving original file to Studio Cloud...');
+      downloadUrl = await uploadFileToFirestoreMedia(file, {
+        fileName: originalFileName,
+        contentType,
+        category: 'customer_uploads',
+        uploadedBy: uploaderName,
+        onProgress: (pct, transferred) => {
+          emitProgress(pct, transferred);
+        }
+      });
+    } catch (fsErr: any) {
+      storageErrorMessage = fsErr?.message || storageErrorMessage;
+      console.warn('[CUSTOMER PHOTO UPLOAD] Firestore cloud media notice:', storageErrorMessage);
+    }
+  }
+
+  // 3. Fail over to Express /api/upload for >25MB files when Express server is running (localhost or Cloud Run)
   if (!downloadUrl && (await checkExpressUploadServer())) {
     try {
       emitProgress(20, Math.round(originalFileSize * 0.2), 'Uploading to studio server...');
@@ -355,7 +380,7 @@ export const uploadOriginalClientPhoto = async (
   if (!downloadUrl) {
     throw new Error(
       storageErrorMessage ||
-        'Cloud file upload failed. Please enable Firebase Storage in Firebase Console or check your network connection and try again.'
+        'Cloud file upload failed. Please check your internet connection or try a file under 25 MB.'
     );
   }
 
@@ -414,7 +439,22 @@ export const downloadOriginalFile = async (urlOrPath: string, fileName: string) 
       return;
     }
 
-    // 2. Fetch remote URL or local uploads path
+    // 2. Reassemble original unmodified bytes from Cloud Firestore Media if fsmedia:// URI
+    if (isFsMediaUrl(urlOrPath)) {
+      const fsBlob = await fetchFirestoreMediaBlob(urlOrPath);
+      await storeOriginalBlobLocally(urlOrPath, fsBlob);
+      const blobUrl = URL.createObjectURL(fsBlob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = cleanName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      return;
+    }
+
+    // 3. Fetch remote URL or local uploads path
     if (urlOrPath && (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://') || urlOrPath.startsWith('blob:') || urlOrPath.startsWith('/'))) {
       try {
         const response = await fetch(urlOrPath);

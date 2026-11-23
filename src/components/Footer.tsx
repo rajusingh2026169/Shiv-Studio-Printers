@@ -4,6 +4,7 @@ import { Phone, Mail, MapPin, Instagram, ArrowUpRight } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { StudioImage } from './StudioMedia';
 
 export const Footer: React.FC = () => {
   const [settings, setSettings] = useState<any>({
@@ -42,11 +43,11 @@ export const Footer: React.FC = () => {
         {/* Studio Brand Column */}
         <div className="space-y-4">
           <div className="flex items-center space-x-3">
-            <img
-              src={settings.logoUrl || STUDIO_IMAGES.logo}
+            <StudioImage
+              src={settings.logoUrl}
+              fallback={STUDIO_IMAGES.logo}
               alt={settings.studioName || 'SHIV STUDIO'}
               className="h-10 w-10 object-cover rounded-full border border-[#D4AF37]/40"
-              referrerPolicy="no-referrer"
             />
             <div>
               <span className="font-display font-bold text-xl text-white tracking-wider uppercase block">

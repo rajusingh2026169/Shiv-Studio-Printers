@@ -21,6 +21,8 @@ import {
 } from '../utils/weddingCardPricing';
 import { uploadOriginalClientPhoto, formatBytes } from '../utils/clientPhotoUploader';
 import { SEOHead } from '../components/SEOHead';
+import { StudioImage, StudioVideo } from '../components/StudioMedia';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 import {
   ArrowLeft,
   Sparkles,
@@ -355,18 +357,18 @@ export const WeddingCardDetail: React.FC<WeddingCardDetailProps> = ({
           <div className="lg:col-span-6 space-y-4">
             <div className="relative bg-[#1A1A1A] border border-white/10 rounded-3xl overflow-hidden aspect-[4/3] group shadow-2xl">
               {card.videoUrl && selectedImageIndex === 0 ? (
-                <video
+                <StudioVideo
                   src={card.videoUrl}
                   poster={activeSlide?.url}
                   controls
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <img
+                <StudioImage
                   src={activeSlide?.url || getCardPrimaryImage(card)}
+                  fallback={STUDIO_IMAGES.royalWeddingInvite}
                   alt={cardTitle}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  referrerPolicy="no-referrer"
                 />
               )}
 
@@ -407,11 +409,11 @@ export const WeddingCardDetail: React.FC<WeddingCardDetailProps> = ({
                       : 'border-white/10 hover:border-white/30'
                   }`}
                 >
-                  <img
+                  <StudioImage
                     src={slide.url}
+                    fallback={STUDIO_IMAGES.royalWeddingInvite}
                     alt={slide.label}
                     className="w-full h-full object-cover rounded-xl"
-                    referrerPolicy="no-referrer"
                   />
                   <span className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/85 text-neutral-200 font-mono text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
                     {slide.label}
@@ -1025,11 +1027,11 @@ export const WeddingCardDetail: React.FC<WeddingCardDetailProps> = ({
                   to={`/wedding-cards/${rel.id}`}
                   className="group bg-[#1A1A1A] border border-white/10 hover:border-[#D4AF37]/50 rounded-2xl overflow-hidden shadow-lg transition-all p-3"
                 >
-                  <img
+                  <StudioImage
                     src={getCardPrimaryImage(rel)}
+                    fallback={STUDIO_IMAGES.royalWeddingInvite}
                     alt={rel.name || rel.title}
                     className="w-full aspect-[4/3] object-cover rounded-xl group-hover:scale-105 transition-transform duration-300"
-                    referrerPolicy="no-referrer"
                   />
                   <div className="pt-3 space-y-1">
                     <span className="text-[11px] font-mono text-[#D4AF37] font-bold block">
@@ -1059,11 +1061,11 @@ export const WeddingCardDetail: React.FC<WeddingCardDetailProps> = ({
             >
               <X className="h-6 w-6" />
             </button>
-            <img
+            <StudioImage
               src={activeSlide?.url || getCardPrimaryImage(card)}
+              fallback={STUDIO_IMAGES.royalWeddingInvite}
               alt={cardTitle}
               className="w-full max-h-[85vh] object-contain rounded-2xl"
-              referrerPolicy="no-referrer"
             />
           </div>
         </div>

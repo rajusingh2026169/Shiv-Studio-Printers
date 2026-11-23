@@ -4,12 +4,13 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { Upload, X, ArrowLeft, ArrowRight, Image as ImageIcon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { compressAndResizeImage } from '../utils/compression';
-import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
 import {
   checkFirebaseStorageBucket,
   checkExpressUploadServer,
   uploadFileViaExpressApi
 } from '../utils/storageAvailability';
+import { uploadFileToFirestoreMedia, isFsMediaUrl } from '../utils/firestoreMediaStore';
+import { StudioImage } from './StudioMedia';
 
 interface MultiImageFieldProps {
   value: string[];
@@ -135,13 +136,24 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
 
         const snapshot = await uploadTask;
         downloadUrl = await getDownloadURL(snapshot.ref);
-      } else if (await checkExpressUploadServer()) {
-        setUploadProgresses({ [testFile.name]: 35 });
-        downloadUrl = await uploadFileViaExpressApi(testFile, testFile.name, (pct) => {
-          setUploadProgresses({ [testFile.name]: pct });
-        });
       } else {
-        throw new Error(bucketStatus.reason || 'Firebase Storage bucket is not available.');
+        setUploadProgresses({ [testFile.name]: 30 });
+        try {
+          downloadUrl = await uploadFileToFirestoreMedia(testFile, {
+            fileName: testFile.name,
+            contentType: 'image/webp',
+            category: 'diagnostics',
+            onProgress: (pct) => setUploadProgresses({ [testFile.name]: pct })
+          });
+        } catch (fsErr) {
+          if (await checkExpressUploadServer()) {
+            downloadUrl = await uploadFileViaExpressApi(testFile, testFile.name, (pct) => {
+              setUploadProgresses({ [testFile.name]: pct });
+            });
+          } else {
+            throw fsErr;
+          }
+        }
       }
 
       const finalUrls = [...value, downloadUrl];
@@ -251,30 +263,52 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
               const snapshot = await Promise.race([uploadTask, timeoutPromise]);
               fileUrl = await getDownloadURL(snapshot.ref);
             } catch (storageErr) {
-              if (await checkExpressUploadServer()) {
+              try {
+                fileUrl = await uploadFileToFirestoreMedia(cf.file, {
+                  fileName: cf.file.name,
+                  contentType: cf.file.type || 'image/webp',
+                  category: storagePath,
+                  uploadedBy: auth.currentUser?.email || 'Admin',
+                  onProgress: (pct) => setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }))
+                });
+              } catch {
+                if (await checkExpressUploadServer()) {
+                  fileUrl = await uploadFileViaExpressApi(cf.file, cf.file.name, (pct) => {
+                    setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }));
+                  });
+                } else {
+                  throw storageErr;
+                }
+              }
+            }
+          } else {
+            try {
+              fileUrl = await uploadFileToFirestoreMedia(cf.file, {
+                fileName: cf.file.name,
+                contentType: cf.file.type || 'image/webp',
+                category: storagePath,
+                uploadedBy: auth.currentUser?.email || 'Admin',
+                onProgress: (pct) => setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }))
+              });
+            } catch (fsErr) {
+              if (expressReady) {
                 fileUrl = await uploadFileViaExpressApi(cf.file, cf.file.name, (pct) => {
                   setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }));
                 });
               } else {
-                throw storageErr;
+                throw fsErr;
               }
             }
-          } else if (expressReady) {
-            fileUrl = await uploadFileViaExpressApi(cf.file, cf.file.name, (pct) => {
-              setUploadProgresses(prev => ({ ...prev, [cf.file.name]: pct }));
-            });
-          } else {
-            throw new Error(bucketStatus.reason || 'Firebase Storage bucket is not initialized.');
           }
 
-          if (!fileUrl || (!fileUrl.startsWith('https://') && !fileUrl.startsWith('/uploads/')) || fileUrl.length > 2048) {
+          if (!fileUrl || (!fileUrl.startsWith('https://') && !fileUrl.startsWith('/uploads/') && !isFsMediaUrl(fileUrl)) || fileUrl.length > 2048) {
             throw new Error(`Invalid URL returned for ${cf.originalName}`);
           }
 
           uploadedUrls.push(fileUrl);
           setUploadProgresses(prev => ({ ...prev, [cf.file.name]: 100 }));
 
-          if (fileUrl.startsWith('https://')) {
+          if (fileUrl.startsWith('https://') || isFsMediaUrl(fileUrl)) {
             try {
               const imageId = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
               await setDoc(doc(db, 'uploaded_images', imageId), {
@@ -495,13 +529,11 @@ export const MultiImageField: React.FC<MultiImageFieldProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {value.map((url, index) => (
             <div key={`${url}-${index}`} className="relative group border border-slate-800 rounded-xl overflow-hidden bg-slate-950 aspect-square flex flex-col justify-between">
-              <img
-                src={resolveMediaUrl(url)}
+              <StudioImage
+                src={url}
                 alt={`Uploaded product ${index + 1}`}
                 loading="lazy"
                 className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-                onError={(e) => applyImageFallback(e)}
               />
               
               {/* Overlay with reordering controls and delete */}

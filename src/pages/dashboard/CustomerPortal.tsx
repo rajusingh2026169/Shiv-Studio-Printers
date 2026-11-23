@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { db, OperationType, handleFirestoreError } from '../../firebase';
 import { Order, Booking, ProofVersion } from '../../types';
 import { downloadOriginalFile } from '../../utils/clientPhotoUploader';
+import { StudioImage, StudioVideo } from '../../components/StudioMedia';
+import { isFsMediaUrl } from '../../utils/firestoreMediaStore';
 import {
   User,
   ShoppingBag,
@@ -424,18 +426,27 @@ export const CustomerPortal: React.FC = () => {
                                 <span>Design Proof v{latestProof.version}</span>
                               </span>
                               <a
-                                href={latestProof.proofUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                href={isFsMediaUrl(latestProof.proofUrl) ? '#download-proof' : latestProof.proofUrl}
+                                target={isFsMediaUrl(latestProof.proofUrl) ? undefined : '_blank'}
+                                rel={isFsMediaUrl(latestProof.proofUrl) ? undefined : 'noopener noreferrer'}
+                                onClick={(e) => {
+                                  if (isFsMediaUrl(latestProof.proofUrl)) {
+                                    e.preventDefault();
+                                    downloadOriginalFile(
+                                      latestProof.proofUrl,
+                                      latestProof.fileName || `Proof_v${latestProof.version}`
+                                    );
+                                  }
+                                }}
                                 className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400 hover:text-amber-300"
                               >
                                 <ExternalLink className="h-3 w-3" />
-                                <span>Open Full Proof</span>
+                                <span>{isFsMediaUrl(latestProof.proofUrl) ? 'Download Full Proof' : 'Open Full Proof'}</span>
                               </a>
                             </div>
 
                             {latestProof.fileType === 'video' ? (
-                              <video
+                              <StudioVideo
                                 src={latestProof.proofUrl}
                                 controls
                                 className="w-full max-h-56 rounded-lg border border-slate-800 bg-black"
@@ -455,11 +466,10 @@ export const CustomerPortal: React.FC = () => {
                                 </button>
                               </div>
                             ) : (
-                              <img
+                              <StudioImage
                                 src={latestProof.proofUrl}
                                 alt={`Proof v${latestProof.version}`}
                                 className="w-full max-h-60 object-contain rounded-lg border border-slate-800 bg-black"
-                                referrerPolicy="no-referrer"
                               />
                             )}
 
@@ -476,9 +486,18 @@ export const CustomerPortal: React.FC = () => {
                                 {proofVersions.map((pv) => (
                                   <a
                                     key={pv.version}
-                                    href={pv.proofUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    href={isFsMediaUrl(pv.proofUrl) ? '#download-proof' : pv.proofUrl}
+                                    target={isFsMediaUrl(pv.proofUrl) ? undefined : '_blank'}
+                                    rel={isFsMediaUrl(pv.proofUrl) ? undefined : 'noopener noreferrer'}
+                                    onClick={(e) => {
+                                      if (isFsMediaUrl(pv.proofUrl)) {
+                                        e.preventDefault();
+                                        downloadOriginalFile(
+                                          pv.proofUrl,
+                                          pv.fileName || `Proof_v${pv.version}`
+                                        );
+                                      }
+                                    }}
                                     className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
                                       pv.status === 'Approved'
                                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'

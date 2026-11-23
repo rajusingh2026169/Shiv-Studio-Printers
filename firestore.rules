@@ -459,6 +459,27 @@ service cloud.firestore {
         (!('compressed' in data) || data.compressed is bool);
     }
 
+    function isValidUploadedMedia(data) {
+      return data.keys().hasAll(['id', 'fileName', 'contentType', 'size', 'chunkCount', 'category', 'ownerId', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'fileName', 'contentType', 'size', 'chunkCount', 'category', 'ownerId', 'uploadedBy', 'createdAt']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+        data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 300 &&
+        data.contentType is string && data.contentType.size() > 0 && data.contentType.size() <= 160 &&
+        data.size is number && data.size > 0 && data.size <= 26214400 &&
+        data.chunkCount is number && data.chunkCount >= 1 && data.chunkCount <= 64 &&
+        data.category is string && data.category.size() > 0 && data.category.size() <= 80 &&
+        data.ownerId is string && data.ownerId.size() > 0 && data.ownerId.size() <= 128 &&
+        (!('uploadedBy' in data) || (data.uploadedBy is string && data.uploadedBy.size() <= 160)) &&
+        data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 64;
+    }
+
+    function isValidUploadedMediaChunk(data) {
+      return data.keys().hasAll(['index', 'data']) &&
+        data.keys().hasOnly(['index', 'data']) &&
+        data.index is number && data.index >= 0 && data.index < 64 &&
+        data.data is string && data.data.size() > 0 && data.data.size() <= 800000;
+    }
+
     // 4. Collection Rules (25 Active Collections)
 
     // Users: Strict PII isolation & zero privilege escalation
@@ -733,6 +754,39 @@ service cloud.firestore {
     match /uploaded_images/{imageId} {
       allow get, list, update, delete: if isAdmin();
       allow create: if isValidId(imageId) && isAdmin() && isValidUploadedImage(incoming());
+    }
+
+    // Cloud Firestore Chunked Media Storage (Cross-device durable storage when Firebase Storage bucket is inactive)
+    match /uploaded_media/{mediaId} {
+      allow get: if isValidId(mediaId);
+      allow list: if isAdmin();
+      allow create: if isValidId(mediaId) &&
+        isValidUploadedMedia(incoming()) &&
+        incoming().id == mediaId &&
+        (
+          isAdmin() ||
+          (isSignedIn() ? incoming().ownerId == request.auth.uid : incoming().ownerId == 'anonymous')
+        );
+      allow update: if false;
+      allow delete: if isValidId(mediaId) && isAdmin();
+
+      match /chunks/{chunkId} {
+        allow get: if isValidId(mediaId) && isValidId(chunkId);
+        allow list: if isAdmin();
+        allow create: if isValidId(mediaId) && isValidId(chunkId) &&
+          isValidUploadedMediaChunk(incoming()) &&
+          exists(/databases/$(database)/documents/uploaded_media/$(mediaId)) &&
+          (
+            isAdmin() ||
+            (
+              isSignedIn()
+                ? get(/databases/$(database)/documents/uploaded_media/$(mediaId)).data.ownerId == request.auth.uid
+                : get(/databases/$(database)/documents/uploaded_media/$(mediaId)).data.ownerId == 'anonymous'
+            )
+          );
+        allow update: if false;
+        allow delete: if isValidId(mediaId) && isValidId(chunkId) && isAdmin();
+      }
     }
 
     match /notifications/{notificationId} {

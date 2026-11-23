@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { ServiceItem } from '../types';
 import { SERVICE_DEFINITIONS } from '../data/studioCatalog';
 import { getImageForSlugOrCategory } from '../assets/studioAssets';
-import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
+import { StudioImage } from '../components/StudioMedia';
 import { OfferBannerDisplay } from '../components/OfferBannerDisplay';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
@@ -169,13 +169,12 @@ export const Services: React.FC = () => {
                 >
                   <div>
                     <Link to={detailRoute} className="block relative aspect-[4/3] overflow-hidden bg-[#111111]">
-                      <img
-                        src={resolveMediaUrl(service.image || service.coverImage, getImageForSlugOrCategory(service.title))}
+                      <StudioImage
+                        src={service.image || service.coverImage}
+                        fallback={getImageForSlugOrCategory(service.title)}
                         alt={service.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(service.title))}
                       />
                     </Link>
 

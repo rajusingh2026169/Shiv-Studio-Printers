@@ -8,6 +8,11 @@ import {
   checkExpressUploadServer,
   uploadFileViaExpressApi
 } from './storageAvailability';
+import {
+  MAX_FIRESTORE_MEDIA_BYTES,
+  isFsMediaUrl,
+  uploadFileToFirestoreMedia
+} from './firestoreMediaStore';
 
 export const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024; // 200 MB
 
@@ -109,8 +114,9 @@ export function validateFirebaseStorageUrl(url: string | undefined, fieldName: s
   }
 
   const isLocalUploadsUrl = trimmed.startsWith('/uploads/');
-  if (!isLocalUploadsUrl && !trimmed.startsWith('https://') && !trimmed.startsWith('http://')) {
-    throw new Error(`Invalid ${fieldName}: URL must be a valid HTTP/HTTPS or /uploads/ URL.`);
+  const isFsMedia = isFsMediaUrl(trimmed);
+  if (!isLocalUploadsUrl && !isFsMedia && !trimmed.startsWith('https://') && !trimmed.startsWith('http://')) {
+    throw new Error(`Invalid ${fieldName}: URL must be a valid HTTP/HTTPS, fsmedia://, or /uploads/ URL.`);
   }
 
   return trimmed;
@@ -119,7 +125,7 @@ export function validateFirebaseStorageUrl(url: string | undefined, fieldName: s
 /**
  * Validates array of VideoItems loaded from Firestore collection 'videos'.
  * Enforces:
- * 1. videoUrl exists and is a valid HTTPS/HTTP or /uploads/ download URL.
+ * 1. videoUrl exists and is a valid HTTPS/HTTP, fsmedia://, or /uploads/ download URL.
  * 2. thumbnailUrl exists and is a clean URL (NOT a Base64 string or blob URL).
  */
 export function validateAndFilterVideoDocs(docs: VideoItem[]): VideoItem[] {
@@ -138,8 +144,9 @@ export function validateAndFilterVideoDocs(docs: VideoItem[]): VideoItem[] {
     const trimmedVideoUrl = docItem.videoUrl.trim();
     const isHttp = trimmedVideoUrl.startsWith('https://') || trimmedVideoUrl.startsWith('http://');
     const isServerUpload = trimmedVideoUrl.startsWith('/uploads/');
+    const isFsMedia = isFsMediaUrl(trimmedVideoUrl);
     if (
-      (!isHttp && !isServerUpload) ||
+      (!isHttp && !isServerUpload && !isFsMedia) ||
       trimmedVideoUrl.startsWith('blob:') ||
       trimmedVideoUrl.startsWith('file:') ||
       trimmedVideoUrl.startsWith('gs:')
@@ -428,6 +435,31 @@ export function uploadVideoResumable(
       } catch {
         // ignore cancel error
       }
+      if (file.size <= MAX_FIRESTORE_MEDIA_BYTES) {
+        try {
+          console.warn('[Video System] Switching video upload to Cloud Firestore Media...');
+          const fsUrl = await uploadFileToFirestoreMedia(file, {
+            fileName: file.name,
+            contentType: file.type || 'video/mp4',
+            category: `videos_${category}`,
+            onProgress: (pct, transferred, total) => {
+              onProgress?.({
+                progress: pct,
+                bytesTransferred: transferred,
+                totalBytes: total,
+                speed: 'Cloud Sync',
+                speedBytesPerSec: 0,
+                remainingTime: pct >= 95 ? 'Finalizing...' : 'Uploading...'
+              });
+            }
+          });
+          settled = true;
+          resolve(fsUrl);
+          return;
+        } catch (fsErr) {
+          console.warn('[Video System] Firestore media video notice:', fsErr);
+        }
+      }
       if (await checkExpressUploadServer()) {
         try {
           console.warn('[Video System] Switching video upload to Express /api/upload endpoint...');
@@ -557,8 +589,8 @@ export async function uploadThumbnailResumable(
 
   if (typeof thumbnailInput === 'string') {
     const trimmed = thumbnailInput.trim();
-    // If it's already a hosted HTTP/HTTPS URL, return as is
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    // If it's already a hosted HTTP/HTTPS or fsmedia URL, return as is
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || isFsMediaUrl(trimmed)) {
       return trimmed;
     }
     if (trimmed.startsWith('data:')) {
@@ -600,12 +632,31 @@ export async function uploadThumbnailResumable(
       return downloadUrl;
     }
 
+    if (blobToUpload.size <= MAX_FIRESTORE_MEDIA_BYTES) {
+      return await uploadFileToFirestoreMedia(blobToUpload, {
+        fileName: `thumb_${timestamp}.${ext}`,
+        contentType: mimeType,
+        category: `thumbnails_${category}`
+      });
+    }
+
     if (await checkExpressUploadServer()) {
       return await uploadFileViaExpressApi(blobToUpload, `thumb_${timestamp}.${ext}`);
     }
     return DEFAULT_STOCK_THUMB;
   } catch (err) {
-    console.warn('[Video System] Storage thumbnail upload notice, using fallback asset:', err);
+    console.warn('[Video System] Storage thumbnail upload notice, checking fallback:', err);
+    if (blobToUpload.size <= MAX_FIRESTORE_MEDIA_BYTES) {
+      try {
+        return await uploadFileToFirestoreMedia(blobToUpload, {
+          fileName: `thumb_${timestamp}.${ext}`,
+          contentType: mimeType,
+          category: `thumbnails_${category}`
+        });
+      } catch {
+        // continue to Express/default
+      }
+    }
     if (await checkExpressUploadServer()) {
       try {
         return await uploadFileViaExpressApi(blobToUpload, `thumb_${timestamp}.${ext}`);

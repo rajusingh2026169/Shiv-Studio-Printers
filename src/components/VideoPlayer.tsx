@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Film
 } from 'lucide-react';
+import { useResolvedMediaUrl } from './StudioMedia';
 
 interface VideoPlayerProps {
   src: string;
@@ -74,6 +75,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const resolvedVideoSrc = useResolvedMediaUrl(src, '');
+  const resolvedPosterSrc = useResolvedMediaUrl(poster, '');
 
   useEffect(() => {
     setError(null);
@@ -180,7 +184,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     );
   }
 
-  const cleanSrc = src.trim();
+  const cleanSrc = resolvedVideoSrc || src.trim();
   const embedSrc = getEmbedUrl(cleanSrc);
 
   if (embedSrc) {
@@ -201,9 +205,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     <div className={`relative aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 group ${className}`}>
       {error ? (
         <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
-          {poster && (
+          {(resolvedPosterSrc || poster) && (
             <img
-              src={poster}
+              src={resolvedPosterSrc || poster}
               alt={title || 'Video Poster'}
               className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none"
             />
@@ -241,7 +245,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         key={cleanSrc}
         ref={videoRef}
         src={cleanSrc}
-        poster={poster || undefined}
+        poster={resolvedPosterSrc || undefined}
         autoPlay={autoPlay}
         preload="metadata"
         playsInline

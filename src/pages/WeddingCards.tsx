@@ -12,6 +12,8 @@ import {
   isDigitalWeddingCard
 } from '../utils/weddingCardPricing';
 import { SEOHead } from '../components/SEOHead';
+import { StudioImage, StudioVideo } from '../components/StudioMedia';
+import { STUDIO_IMAGES } from '../assets/studioAssets';
 import {
   Search,
   MessageCircle,
@@ -476,11 +478,11 @@ export const WeddingCards: React.FC = () => {
                     {/* Card Preview Imagery */}
                     <div className="relative aspect-[4/3] bg-[#111111] overflow-hidden">
                       <Link to={`/wedding-cards/${card.id}`} className="block w-full h-full">
-                        <img
+                        <StudioImage
                           src={primaryImage}
+                          fallback={STUDIO_IMAGES.royalWeddingInvite}
                           alt={cardTitle}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          referrerPolicy="no-referrer"
                         />
                       </Link>
                       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#111111] via-transparent to-black/30" />
@@ -664,21 +666,21 @@ export const WeddingCards: React.FC = () => {
               {/* Main Preview */}
               <div className="relative flex-grow bg-[#111111] flex items-center justify-center p-4 overflow-hidden min-h-[340px]">
                 {activeLightboxCard.videoUrl && activeLightboxIndex === 0 ? (
-                  <video
+                  <StudioVideo
                     src={activeLightboxCard.videoUrl}
                     poster={currentSlide?.url}
                     controls
                     className="max-h-[58vh] w-full max-w-2xl rounded-xl border border-white/10"
                   />
                 ) : (
-                  <img
+                  <StudioImage
                     src={currentSlide?.url}
+                    fallback={STUDIO_IMAGES.royalWeddingInvite}
                     alt={lightboxTitle}
                     onClick={() => setIsZoomed(!isZoomed)}
                     className={`max-h-[58vh] object-contain rounded-xl transition-transform duration-300 cursor-zoom-in ${
                       isZoomed ? 'scale-150 cursor-zoom-out' : 'scale-100'
                     }`}
-                    referrerPolicy="no-referrer"
                   />
                 )}
               </div>
@@ -748,11 +750,11 @@ export const WeddingCards: React.FC = () => {
             ) : (
               <form onSubmit={handleSubmitQuote} className="p-6 space-y-4">
                 <div className="p-3 bg-[#111111] rounded-xl border border-white/10 flex items-center gap-3 text-xs">
-                  <img
+                  <StudioImage
                     src={getCardPrimaryImage(quoteCard)}
+                    fallback={STUDIO_IMAGES.royalWeddingInvite}
                     alt={quoteCard.name || quoteCard.title}
                     className="h-12 w-12 object-cover rounded-lg shrink-0"
-                    referrerPolicy="no-referrer"
                   />
                   <div>
                     <p className="font-semibold text-white leading-tight">{quoteCard.name || quoteCard.title}</p>

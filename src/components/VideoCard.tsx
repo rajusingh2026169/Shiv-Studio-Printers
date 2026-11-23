@@ -3,6 +3,7 @@ import { Play, Clock, Eye, Calendar, Film } from 'lucide-react';
 import { VideoItem } from '../types';
 import { generateVideoThumbnailBlob } from '../utils/videoUtils';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { isFsMediaUrl, resolveFsMediaObjectUrl } from '../utils/firestoreMediaStore';
 
 interface VideoCardProps {
   video: VideoItem;
@@ -21,31 +22,46 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   onDelete,
   showAdminControls = false
 }) => {
-  const [thumbSrc, setThumbSrc] = useState<string>(video.thumbnailUrl || STOCK_THUMB_FALLBACK);
+  const [thumbSrc, setThumbSrc] = useState<string>(() => {
+    const raw = video.thumbnailUrl?.trim() || '';
+    if (!raw || isFsMediaUrl(raw)) return STOCK_THUMB_FALLBACK;
+    return raw;
+  });
   const [isThumbLoaded, setIsThumbLoaded] = useState<boolean>(false);
 
   useEffect(() => {
+    let active = true;
     const src = video.thumbnailUrl?.trim();
-    if (src) {
-      setThumbSrc(src);
-    } else if (video.videoUrl) {
-      // Fallback: Generate thumbnail from video frame if thumbnail is missing
-      generateVideoThumbnailBlob(video.videoUrl)
-        .then((blob) => {
-          const generatedUrl = URL.createObjectURL(blob);
-          setThumbSrc(generatedUrl);
-          console.log(`[Video System] thumbnail loaded: generated from video for ${video.title}`);
+    if (src && isFsMediaUrl(src)) {
+      resolveFsMediaObjectUrl(src)
+        .then((objUrl) => {
+          if (active && objUrl) setThumbSrc(objUrl);
         })
         .catch(() => {
-          setThumbSrc(STOCK_THUMB_FALLBACK);
+          if (active) setThumbSrc(STOCK_THUMB_FALLBACK);
         });
+    } else if (src) {
+      setThumbSrc(src);
+    } else if (video.videoUrl) {
+      const loadFrameFromVideo = async () => {
+        const sourceUrl = isFsMediaUrl(video.videoUrl)
+          ? await resolveFsMediaObjectUrl(video.videoUrl)
+          : video.videoUrl;
+        const blob = await generateVideoThumbnailBlob(sourceUrl);
+        if (active) {
+          setThumbSrc(URL.createObjectURL(blob));
+        }
+      };
+      loadFrameFromVideo().catch(() => {
+        if (active) setThumbSrc(STOCK_THUMB_FALLBACK);
+      });
     } else {
       setThumbSrc(STOCK_THUMB_FALLBACK);
     }
 
-    if (video.videoUrl) {
-      console.log(`[Video System] video URL loaded: ${video.videoUrl}`);
-    }
+    return () => {
+      active = false;
+    };
   }, [video.thumbnailUrl, video.videoUrl, video.title]);
 
   const handlePlayClick = () => {

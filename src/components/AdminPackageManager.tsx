@@ -5,7 +5,8 @@ import { PackageItem, PackageCategory } from '../types';
 import { ImageField } from './ImageField';
 import { getImageForSlugOrCategory } from '../assets/studioAssets';
 import { uploadBase64ToStorage } from '../utils/imageUploader';
-import { resolveMediaUrl, applyImageFallback, isEphemeralMediaUrl } from '../utils/mediaResolver';
+import { isEphemeralMediaUrl } from '../utils/mediaResolver';
+import { StudioImage } from './StudioMedia';
 import {
   Plus,
   Edit3,
@@ -366,12 +367,11 @@ export const AdminPackageManager: React.FC<AdminPackageManagerProps> = ({ onTrig
             >
               <div>
                 <div className="relative aspect-[16/10] bg-[#111111] overflow-hidden">
-                  <img
-                    src={resolveMediaUrl(pkg.image, getImageForSlugOrCategory(pkg.category))}
+                  <StudioImage
+                    src={pkg.image}
+                    fallback={getImageForSlugOrCategory(pkg.category)}
                     alt={pkg.name}
                     className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => applyImageFallback(e, getImageForSlugOrCategory(pkg.category))}
                   />
                   <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
                     <span className="px-2.5 py-1 bg-[#111111]/85 backdrop-blur-sm border border-[#D4AF37]/40 text-[#D4AF37] font-mono text-[10px] uppercase font-bold rounded">

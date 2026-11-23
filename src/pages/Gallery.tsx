@@ -8,7 +8,7 @@ import { VideoCard } from '../components/VideoCard';
 import { validateAndFilterVideoDocs } from '../utils/videoUtils';
 import { SEOHead } from '../components/SEOHead';
 import { getImageForSlugOrCategory, STUDIO_IMAGES } from '../assets/studioAssets';
-import { resolveMediaUrl, applyImageFallback } from '../utils/mediaResolver';
+import { StudioImage } from '../components/StudioMedia';
 import { Camera, Film, ZoomIn, X, Image as ImageIcon } from 'lucide-react';
 
 const DEFAULT_SHOWCASE_GALLERY: GalleryItem[] = [
@@ -189,20 +189,18 @@ export const Gallery: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
               {filteredPhotos.map((item) => {
                 const fallbackImg = getImageForSlugOrCategory(item.category);
-                const resolvedImg = resolveMediaUrl(item.imageUrl, fallbackImg);
                 return (
                 <div
                   key={item.id}
-                  onClick={() => setSelectedImage(resolvedImg)}
+                  onClick={() => setSelectedImage(item.imageUrl || fallbackImg)}
                   className="group relative rounded-xl overflow-hidden cursor-zoom-in aspect-[3/4] bg-[#1A1A1A] border border-white/10 hover:border-[#D4AF37]/40 transition-colors"
                 >
-                  <img
-                    src={resolvedImg}
+                  <StudioImage
+                    src={item.imageUrl}
+                    fallback={fallbackImg}
                     alt={item.altText || item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => applyImageFallback(e, fallbackImg)}
                   />
                   <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
                     <div className="flex justify-end">
@@ -262,12 +260,10 @@ export const Gallery: React.FC = () => {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 cursor-zoom-out"
           onClick={() => setSelectedImage(null)}
         >
-          <img
-            src={resolveMediaUrl(selectedImage)}
+          <StudioImage
+            src={selectedImage}
             alt="SHIV STUDIO enlarged photograph"
             className="max-w-full max-h-[90vh] object-contain rounded-xl border border-white/15"
-            referrerPolicy="no-referrer"
-            onError={(e) => applyImageFallback(e)}
           />
         </div>
       )}

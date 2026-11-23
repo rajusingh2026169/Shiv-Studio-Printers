@@ -8,6 +8,7 @@ import { SERVICE_DEFINITIONS } from '../data/studioCatalog';
 import { SEOHead } from '../components/SEOHead';
 import { buildWhatsAppUrl } from '../components/WhatsAppButton';
 import { getImageForSlugOrCategory } from '../assets/studioAssets';
+import { StudioImage } from '../components/StudioMedia';
 import { CheckCircle, Award, MessageCircle, AlertCircle } from 'lucide-react';
 
 export const BookingPage: React.FC = () => {
@@ -449,15 +450,11 @@ export const BookingPage: React.FC = () => {
                   Selection Summary
                 </h3>
                 <div className="aspect-[4/3] rounded-xl overflow-hidden bg-[#111111]">
-                  <img
-                    src={
-                      selectedPackage?.image ||
-                      selectedService?.image ||
-                      getImageForSlugOrCategory(effectiveTitle)
-                    }
+                  <StudioImage
+                    src={selectedPackage?.image || selectedService?.image}
+                    fallback={getImageForSlugOrCategory(effectiveTitle)}
                     alt={effectiveTitle}
                     className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
                   />
                 </div>
                 <div className="space-y-1">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Order, OrderMessage, UploadedFileRecord } from '../types';
 import { sendOrderMessage, listenOrderMessages, markOrderMessagesAsRead } from '../utils/messageService';
 import { downloadOriginalFile } from '../utils/clientPhotoUploader';
+import { StudioImage } from './StudioMedia';
 import { 
   X, 
   Send, 
@@ -176,11 +177,10 @@ export const OrderMessageModal: React.FC<OrderMessageModalProps> = ({
                       <div className="flex items-center space-x-3 overflow-hidden">
                         <div className="h-10 w-10 bg-slate-950 border border-slate-800 rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
                           {targetUrl ? (
-                            <img 
+                            <StudioImage 
                               src={fileRec.thumbnailUrl || targetUrl} 
                               alt={targetName} 
                               className="h-full w-full object-cover"
-                              referrerPolicy="no-referrer"
                             />
                           ) : (
                             <FileCheck className="h-5 w-5 text-amber-400" />

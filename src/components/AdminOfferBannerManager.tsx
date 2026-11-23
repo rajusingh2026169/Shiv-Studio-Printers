@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { STUDIO_IMAGES } from '../assets/studioAssets';
+import { StudioImage } from './StudioMedia';
 import { 
   Plus, 
   Edit3, 
@@ -320,8 +321,9 @@ export const AdminOfferBannerManager: React.FC = () => {
             >
               {/* Card Banner Image Preview Header */}
               <div className="relative h-36 bg-slate-950 overflow-hidden group">
-                <img
+                <StudioImage
                   src={banner.desktopImageUrl}
+                  fallback={STUDIO_IMAGES.heroWedding}
                   alt={banner.title}
                   className="w-full h-full object-cover opacity-70 group-hover:scale-105 transition-transform duration-500"
                 />
@@ -738,12 +740,13 @@ export const AdminOfferBannerManager: React.FC = () => {
               <div className="relative overflow-hidden rounded-3xl border border-slate-800 shadow-2xl bg-slate-950 p-6 sm:p-8 flex flex-col justify-between min-h-[220px]">
                 
                 {/* Background image preview */}
-                <img
+                <StudioImage
                   src={
                     previewDevice === 'mobile' && previewBanner.mobileImageUrl
                       ? previewBanner.mobileImageUrl
                       : previewBanner.desktopImageUrl
                   }
+                  fallback={STUDIO_IMAGES.heroWedding}
                   alt={previewBanner.title}
                   className="absolute inset-0 w-full h-full object-cover opacity-50"
                 />
